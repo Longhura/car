@@ -1809,30 +1809,48 @@ function UIModule:CreateTitleBar()
     self:SetupTitleBarEvents()
 end
 
--- Setup Dragging
+-- Setup Dragging (Sửa lỗi: Kéo thả mượt mà bằng Vector2 delta calculation)
 function UIModule:SetupDragging(dragHandle)
     local dragging = false
     local dragInput
     local dragStart
     local startPos
     
+    -- Cập nhật vị trí trực tiếp không dùng Tween để tránh lag
     local function update(input)
         local delta = input.Position - dragStart
-        local newPosition = UDim2.new(
+        self.Elements.MainFrame.Position = UDim2.new(
             startPos.X.Scale,
             startPos.X.Offset + delta.X,
             startPos.Y.Scale,
             startPos.Y.Offset + delta.Y
         )
-        
-        -- Smooth tween to new position
-        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tween = TweenService:Create(self.Elements.MainFrame, tweenInfo, {Position = newPosition})
-        tween:Play()
     end
     
     dragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            -- Kiểm tra xem có click vào nút không (MinimizeBtn, CloseBtn)
+            local mousePos = UserInputService:GetMouseLocation()
+            local minimizeBtn = self.Elements.MinimizeBtn
+            local closeBtn = self.Elements.CloseBtn
+            
+            -- Nếu click vào nút thì không kéo
+            if minimizeBtn and closeBtn then
+                local minAbsPos = minimizeBtn.AbsolutePosition
+                local minAbsSize = minimizeBtn.AbsoluteSize
+                local closeAbsPos = closeBtn.AbsolutePosition
+                local closeAbsSize = closeBtn.AbsoluteSize
+                
+                local inMinimize = mousePos.X >= minAbsPos.X and mousePos.X <= minAbsPos.X + minAbsSize.X
+                    and mousePos.Y >= minAbsPos.Y and mousePos.Y <= minAbsPos.Y + minAbsSize.Y
+                local inClose = mousePos.X >= closeAbsPos.X and mousePos.X <= closeAbsPos.X + closeAbsSize.X
+                    and mousePos.Y >= closeAbsPos.Y and mousePos.Y <= closeAbsPos.Y + closeAbsSize.Y
+                
+                if inMinimize or inClose then
+                    return -- Không kéo nếu click vào nút
+                end
+            end
+            
             dragging = true
             dragStart = input.Position
             startPos = self.Elements.MainFrame.Position
@@ -2921,29 +2939,43 @@ function UIModule:SetupStatsUpdater()
     UtilsModule:RegisterConnection(connection, "UIStatsUpdate")
 end
 
--- Tạo Mini Toolbar
+-- Tạo Mini Toolbar (Icon nổi khi thu nhỏ)
 function UIModule:CreateMiniToolbar()
     local miniToolbar = Instance.new("Frame")
     miniToolbar.Name = "MiniToolbar"
-    miniToolbar.Size = UDim2.new(0, 60, 0, 60)
-    miniToolbar.Position = UDim2.new(0, 20, 0.5, -30)
+    miniToolbar.Size = UDim2.new(0, 55, 0, 55)
+    miniToolbar.Position = UDim2.new(0, 20, 0.5, -27)
     miniToolbar.BackgroundColor3 = self.Theme.Background
-    miniToolbar.BackgroundTransparency = 0.2
+    miniToolbar.BackgroundTransparency = 0.1
     miniToolbar.BorderSizePixel = 0
     miniToolbar.Visible = false
+    miniToolbar.Active = true
     miniToolbar.Parent = self.Elements.ScreenGui
     
     self.Elements.MiniToolbar = miniToolbar
     
+    -- Bo tròn hoàn toàn thành hình tròn
     local miniCorner = Instance.new("UICorner")
-    miniCorner.CornerRadius = UDim.new(0, 12)
+    miniCorner.CornerRadius = UDim.new(1, 0)
     miniCorner.Parent = miniToolbar
     
+    -- Viền phát sáng neon
     local miniStroke = Instance.new("UIStroke")
+    miniStroke.Name = "GlowStroke"
     miniStroke.Color = self.Theme.Accent
     miniStroke.Thickness = 2
-    miniStroke.Transparency = 0.3
+    miniStroke.Transparency = 0.2
     miniStroke.Parent = miniToolbar
+    
+    self.Elements.MiniStroke = miniStroke
+    
+    -- Glow effect layer bên ngoài
+    local glowOuter = Instance.new("UIStroke")
+    glowOuter.Name = "GlowOuter"
+    glowOuter.Color = self.Theme.Accent
+    glowOuter.Thickness = 4
+    glowOuter.Transparency = 0.7
+    glowOuter.Parent = miniToolbar
     
     -- Expand button
     local expandBtn = Instance.new("TextButton")
@@ -2953,32 +2985,101 @@ function UIModule:CreateMiniToolbar()
     expandBtn.Font = Enum.Font.GothamBold
     expandBtn.Text = "⚡"
     expandBtn.TextColor3 = self.Theme.Accent
-    expandBtn.TextSize = 28
+    expandBtn.TextSize = 26
     expandBtn.AutoButtonColor = false
     expandBtn.Parent = miniToolbar
     
-    -- Pulse animation
-    local pulseIn = TweenService:Create(miniStroke, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-        Transparency = 0.7
+    -- Tooltip
+    local tooltip = Instance.new("TextLabel")
+    tooltip.Name = "Tooltip"
+    tooltip.Size = UDim2.new(0, 100, 0, 25)
+    tooltip.Position = UDim2.new(1, 10, 0.5, -12)
+    tooltip.BackgroundColor3 = self.Theme.BackgroundSecondary
+    tooltip.BackgroundTransparency = 0.2
+    tooltip.BorderSizePixel = 0
+    tooltip.Font = Enum.Font.Gotham
+    tooltip.Text = "Mở Anti-Lag"
+    tooltip.TextColor3 = self.Theme.Text
+    tooltip.TextSize = 11
+    tooltip.Visible = false
+    tooltip.Parent = miniToolbar
+    
+    local tooltipCorner = Instance.new("UICorner")
+    tooltipCorner.CornerRadius = UDim.new(0, 6)
+    tooltipCorner.Parent = tooltip
+    
+    -- Pulse animation (breathing effect)
+    local pulseIn = TweenService:Create(miniStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Transparency = 0.6,
+        Thickness = 3
     })
     
+    local glowPulse = TweenService:Create(glowOuter, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Transparency = 0.9
+    })
+    
+    -- Click để mở rộng UI
     expandBtn.MouseButton1Click:Connect(function()
         self:ExpandUI()
     end)
     
+    -- Hover effects
     expandBtn.MouseEnter:Connect(function()
         pulseIn:Pause()
-        TweenService:Create(miniStroke, TweenInfo.new(0.2), {Transparency = 0}):Play()
-        TweenService:Create(expandBtn, TweenInfo.new(0.2), {TextSize = 32}):Play()
+        glowPulse:Pause()
+        
+        TweenService:Create(miniStroke, TweenInfo.new(0.2), {
+            Transparency = 0,
+            Thickness = 3,
+            Color = self.Theme.AccentSecondary
+        }):Play()
+        
+        TweenService:Create(glowOuter, TweenInfo.new(0.2), {
+            Transparency = 0.5
+        }):Play()
+        
+        TweenService:Create(expandBtn, TweenInfo.new(0.2), {
+            TextSize = 30,
+            TextColor3 = self.Theme.AccentSecondary
+        }):Play()
+        
+        TweenService:Create(miniToolbar, TweenInfo.new(0.2), {
+            Size = UDim2.new(0, 60, 0, 60)
+        }):Play()
+        
+        tooltip.Visible = true
     end)
     
     expandBtn.MouseLeave:Connect(function()
+        TweenService:Create(miniStroke, TweenInfo.new(0.2), {
+            Transparency = 0.2,
+            Thickness = 2,
+            Color = self.Theme.Accent
+        }):Play()
+        
+        TweenService:Create(glowOuter, TweenInfo.new(0.2), {
+            Transparency = 0.7
+        }):Play()
+        
+        TweenService:Create(expandBtn, TweenInfo.new(0.2), {
+            TextSize = 26,
+            TextColor3 = self.Theme.Accent
+        }):Play()
+        
+        TweenService:Create(miniToolbar, TweenInfo.new(0.2), {
+            Size = UDim2.new(0, 55, 0, 55)
+        }):Play()
+        
+        tooltip.Visible = false
+        
+        -- Resume pulse animations
         pulseIn:Play()
-        TweenService:Create(expandBtn, TweenInfo.new(0.2), {TextSize = 28}):Play()
+        glowPulse:Play()
     end)
     
-    -- Store pulse tween reference
+    -- Store pulse tween references
     self.Elements.MiniPulse = pulseIn
+    self.Elements.MiniGlowPulse = glowPulse
     
     -- Setup mini toolbar dragging
     self:SetupMiniDragging(miniToolbar)
@@ -3062,64 +3163,96 @@ function UIModule:SwitchTab(tabName)
     end
 end
 
--- Minimize UI
+-- Minimize UI (Thu nhỏ thành icon nổi)
 function UIModule:MinimizeUI()
     ConfigModule.State.IsMinimized = true
     
-    -- Animate main frame out
-    local hideTween = TweenService:Create(self.Elements.MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-        Size = UDim2.new(0, 0, 0, 0),
-        Position = UDim2.new(0.5, 0, 0.5, 0)
+    -- Lưu vị trí hiện tại của MainFrame để restore sau
+    self.LastMainFramePosition = self.Elements.MainFrame.Position
+    
+    -- Animate main frame thu nhỏ và biến mất
+    local hideTween = TweenService:Create(self.Elements.MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 55, 0, 55),
+        BackgroundTransparency = 1
     })
     
     hideTween.Completed:Connect(function()
         self.Elements.MainFrame.Visible = false
-        self.Elements.MiniToolbar.Visible = true
         
-        -- Start pulse animation
+        -- Hiển thị Mini Toolbar (icon nổi)
+        self.Elements.MiniToolbar.Visible = true
+        self.Elements.MiniToolbar.Size = UDim2.new(0, 0, 0, 0)
+        
+        -- Animate mini toolbar xuất hiện với hiệu ứng pop
+        TweenService:Create(self.Elements.MiniToolbar, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 55, 0, 55)
+        }):Play()
+        
+        -- Bắt đầu pulse animation
         if self.Elements.MiniPulse then
             self.Elements.MiniPulse:Play()
         end
-        
-        -- Animate mini toolbar in
-        self.Elements.MiniToolbar.Size = UDim2.new(0, 0, 0, 0)
-        TweenService:Create(self.Elements.MiniToolbar, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 60, 0, 60)
-        }):Play()
+        if self.Elements.MiniGlowPulse then
+            self.Elements.MiniGlowPulse:Play()
+        end
     end)
     
     hideTween:Play()
+    
+    -- Update status
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] UI đã thu nhỏ thành icon")
+    end
 end
 
--- Expand UI
+-- Expand UI (Mở rộng từ icon thành menu đầy đủ)
 function UIModule:ExpandUI()
     ConfigModule.State.IsMinimized = false
     
-    -- Stop pulse animation
+    -- Dừng pulse animations
     if self.Elements.MiniPulse then
         self.Elements.MiniPulse:Pause()
     end
+    if self.Elements.MiniGlowPulse then
+        self.Elements.MiniGlowPulse:Pause()
+    end
     
-    -- Animate mini toolbar out
+    -- Animate mini toolbar thu nhỏ và biến mất
     local hideTween = TweenService:Create(self.Elements.MiniToolbar, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
         Size = UDim2.new(0, 0, 0, 0)
     })
     
     hideTween.Completed:Connect(function()
         self.Elements.MiniToolbar.Visible = false
-        self.Elements.MainFrame.Visible = true
         
-        -- Animate main frame in
-        self.Elements.MainFrame.Size = UDim2.new(0, 0, 0, 0)
-        self.Elements.MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+        -- Hiển thị MainFrame
+        self.Elements.MainFrame.Visible = true
+        self.Elements.MainFrame.BackgroundTransparency = ConfigModule.Settings.UITransparency
+        
+        -- Khôi phục vị trí cũ hoặc vị trí mặc định
+        local targetPos = self.LastMainFramePosition or UDim2.new(0.5, -190, 0.5, -260)
+        
+        -- Animate main frame xuất hiện với hiệu ứng pop
+        self.Elements.MainFrame.Size = UDim2.new(0, 55, 0, 55)
+        self.Elements.MainFrame.Position = UDim2.new(
+            targetPos.X.Scale,
+            targetPos.X.Offset + 162, -- Center offset
+            targetPos.Y.Scale,
+            targetPos.Y.Offset + 232  -- Center offset
+        )
         
         TweenService:Create(self.Elements.MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
             Size = UDim2.new(0, 380, 0, 520),
-            Position = UDim2.new(0.5, -190, 0.5, -260)
+            Position = targetPos
         }):Play()
     end)
     
     hideTween:Play()
+    
+    -- Update status
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] UI đã mở rộng")
+    end
 end
 
 -- Destroy UI
