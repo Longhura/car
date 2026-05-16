@@ -1,1003 +1,1842 @@
 --[[
-============================================================
-    SUNNY HUB PRO - All-in-One Mod Menu (Luau)
-    Gop 5 script: Mua / Mo / Giu / Hut (Nhat) / Xoa GUI
-    Tac gia: Sunny Hub
-------------------------------------------------------------
-    PHIEN BAN NANG CAP:
-    1. Event-Driven Architecture (khong dung while true do)
-    2. Tab "Giam Lag" voi 3 che do: Co ban, Nang cao, Sieu toi gian
-    3. Tab "Quan Ly Bo Nho" - Hien thi RAM, doc rac thu cong
-    4. Tab "Profiles" - Profile cho tung loai game
-    5. Khoi phuc 100% khi tat che do giam lag
-    6. Disconnect events tranh Memory Leak
-    7. [FIX] Dropdown mo xuong duoi voi ScrollingFrame, ZIndex cao
-    8. [FIX] Nut X dong script hoan toan (destroy)
-    9. [FIX] Nut - thu nho thanh icon
-    10.[FIX] Them TextBox nhap truc tiep cho cac slider
-============================================================
+    ╔══════════════════════════════════════════════════════════════════════════════╗
+    ║                    ANTI-LAG CORE - PERFORMANCE OPTIMIZER                      ║
+    ║                         Phiên bản: 3.0.0 Ultimate                             ║
+    ║                    Tác giả: Performance Optimization Team                     ║
+    ║                                                                               ║
+    ║  Script tối ưu hóa hiệu năng chuyên nghiệp cho Roblox                        ║
+    ║  Sử dụng kiến trúc Event-Driven, không gây lag hoặc memory leak              ║
+    ╚══════════════════════════════════════════════════════════════════════════════╝
 ]]
 
--- =================== SERVICES (Local Cache de tang toc) ===================
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local TweenService      = game:GetService("TweenService")
-local CoreGui           = game:GetService("CoreGui")
-local Lighting          = game:GetService("Lighting")
-local MaterialService   = game:GetService("MaterialService")
-local SoundService      = game:GetService("SoundService")
-local Workspace         = game:GetService("Workspace")
+--============================================================================--
+--                         MODULE: SERVICE CACHE                               --
+--  Cache tất cả Service vào biến Local để tăng tốc độ truy xuất              --
+--============================================================================--
 
-local LP        = Players.LocalPlayer
-local PlayerGui = LP:WaitForChild("PlayerGui")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local MaterialService = game:GetService("MaterialService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
+local Debris = game:GetService("Debris")
+local HttpService = game:GetService("HttpService")
+local Stats = game:GetService("Stats")
 
--- =================== BIEN TOAN CUC ===================
--- Kiem soat viec chay script
-local ScriptRunning = true
+-- Biến Player Local
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = Workspace.CurrentCamera
 
--- Luu tru tat ca Event Connections de disconnect khi can
-local AllConnections = {}
+--============================================================================--
+--                         MODULE: CONFIG                                      --
+--  Lưu trữ tất cả cấu hình và trạng thái của script                          --
+--============================================================================--
 
--- Xoa menu cu neu chay lai
-pcall(function()
-    if CoreGui:FindFirstChild("SunnyHubPro") then
-        CoreGui.SunnyHubPro:Destroy()
-    end
-    if PlayerGui:FindFirstChild("SunnyHubPro") then
-        PlayerGui.SunnyHubPro:Destroy()
-    end
-end)
+local ConfigModule = {}
 
--- =================== CONFIG ===================
-local Config = {
-    -- Shop
-    SelectedItem    = "Frostbound",
-    AutoBuy         = false,
-    BuyInterval     = 10,
-
-    -- Auto Farm / Hut Nhat
-    AutoPickup      = false,
-    PickupRange     = 15,
-    ScanSpeed       = 0.25,
-
-    -- Crates
-    AutoOpen        = false,
-    OpenSpeed       = 0.05,
-    AntiEgg         = false,
-
-    -- Misc
-    LockTool        = false,
-    LockedTool      = nil,
-    ToggleKey       = Enum.KeyCode.RightControl,
+-- Cấu hình mặc định
+ConfigModule.Settings = {
+    -- Cấu hình chung
+    ScriptEnabled = true,
+    DebugMode = false,
+    AutoSaveConfig = true,
     
-    -- Giam Lag - 3 che do chinh
-    -- 0 = Tat, 1 = Co ban, 2 = Nang cao, 3 = Sieu toi gian (man hinh den)
-    LagMode         = 0,
+    -- Cấu hình giảm lag
+    LagReductionMode = 0, -- 0: Tắt, 1: Cơ bản, 2: Nâng cao, 3: Siêu mạnh
+    BlackScreenEnabled = false,
+    FPSCapEnabled = false,
+    FPSCapValue = 60,
     
-    -- Profile Game
-    -- 0 = Khong, 1 = Anime, 2 = Tycoon, 3 = Shooter
-    GameProfile     = 0,
+    -- Cấu hình bộ nhớ
+    AutoGarbageCollection = false,
+    GCInterval = 30, -- Giây
+    
+    -- Profile game
+    CurrentProfile = "Default", -- Default, Anime, Tycoon, Shooter
+    
+    -- UI Settings
+    UIScale = 1,
+    UITransparency = 0.1,
+    DragEnabled = true,
+    MinimizeOnStart = false
 }
 
-local TotemList = {
-    "Wooden","Stone","Golden","Spiritual","Energy",
-    "Divine","Galactic","Inferno","Frostbound"
+-- Trạng thái runtime
+ConfigModule.State = {
+    -- Connections đang hoạt động (để cleanup)
+    ActiveConnections = {},
+    
+    -- Trạng thái UI
+    IsMinimized = false,
+    IsDragging = false,
+    DragStart = nil,
+    StartPosition = nil,
+    
+    -- Thống kê
+    PartsOptimized = 0,
+    EffectsRemoved = 0,
+    MemoryFreed = 0,
+    
+    -- Cached original values (để restore)
+    OriginalLighting = {},
+    OriginalMaterials = {},
+    OriginalEffects = {}
 }
 
-local LagModeNames = {
-    "Tat (Khoi phuc 100%)",
-    "Che do 1: Co ban",
-    "Che do 2: Nang cao", 
-    "Che do 3: Sieu toi gian / Treo may"
+-- Danh sách các Instance cần tối ưu
+ConfigModule.OptimizationTargets = {
+    Effects = {
+        "BlurEffect",
+        "SunRaysEffect", 
+        "ColorCorrectionEffect",
+        "BloomEffect",
+        "DepthOfFieldEffect",
+        "Atmosphere"
+    },
+    Particles = {
+        "ParticleEmitter",
+        "Trail",
+        "Beam",
+        "Fire",
+        "Smoke",
+        "Sparkles"
+    },
+    Visuals = {
+        "Decal",
+        "Texture",
+        "SurfaceAppearance"
+    },
+    Sounds = {
+        "Sound"
+    }
 }
 
-local ProfileNames = {
-    "Khong ap dung",
-    "Profile Anime (Blox Fruits, Anime Adventures...)",
-    "Profile Tycoon/Simulator",
-    "Profile Shooter/FPS"
+-- Profile cấu hình cho từng loại game
+ConfigModule.GameProfiles = {
+    Default = {
+        Name = "Mặc Định",
+        Description = "Cấu hình cân bằng cho mọi loại game",
+        Settings = {
+            HideParticles = true,
+            HideTrails = true,
+            HideDecals = false,
+            HideTextures = false,
+            SimplifyMaterials = true,
+            HideDistantObjects = false,
+            DistanceThreshold = 500
+        }
+    },
+    Anime = {
+        Name = "Anime Game",
+        Description = "Tối ưu cho Blox Fruits, Anime Adventures, Grand Piece...",
+        Settings = {
+            HideParticles = true,
+            HideTrails = true,
+            HideDecals = true,
+            HideTextures = false,
+            SimplifyMaterials = true,
+            HideDistantObjects = true,
+            DistanceThreshold = 300,
+            HideSkillEffects = true,
+            HideLargeNPCs = true,
+            NPCSizeThreshold = 50
+        }
+    },
+    Tycoon = {
+        Name = "Tycoon/Simulator",
+        Description = "Tối ưu cho Pet Simulator, Tycoon games...",
+        Settings = {
+            HideParticles = true,
+            HideTrails = true,
+            HideDecals = true,
+            HideTextures = true,
+            SimplifyMaterials = true,
+            HideDistantObjects = true,
+            DistanceThreshold = 200,
+            HideFloatingText = true,
+            HideDroppedItems = true,
+            HideDamageIndicators = true
+        }
+    },
+    Shooter = {
+        Name = "Shooter/FPS",
+        Description = "Tối ưu cho Arsenal, Phantom Forces, Bad Business...",
+        Settings = {
+            HideParticles = false, -- Giữ lại để thấy đạn
+            HideTrails = false,
+            HideDecals = true,
+            HideTextures = true,
+            SimplifyMaterials = true,
+            HideDistantObjects = false,
+            DistanceThreshold = 1000,
+            KeepPlayerVisibility = true,
+            OptimizeEnvironment = true,
+            ReduceMuzzleFlash = true
+        }
+    }
 }
 
--- =================== HE THONG LUU TRU VA KHOI PHUC 100% ===================
-local OriginalSettings = {
-    Saved = false,
+-- Hàm lưu cấu hình (sử dụng writefile nếu có)
+function ConfigModule:SaveConfig()
+    if not self.Settings.AutoSaveConfig then return end
     
-    -- Lighting
-    GlobalShadows = nil,
-    FogEnd = nil,
-    FogStart = nil,
-    FogColor = nil,
-    Brightness = nil,
-    ClockTime = nil,
-    OutdoorAmbient = nil,
-    Ambient = nil,
-    
-    -- Lighting Effects
-    LightingEffects = {},
-    
-    -- Terrain
-    Terrain = {},
-    
-    -- Parts (Material, CastShadow, Transparency)
-    ModifiedParts = {},
-    
-    -- Particles, Fire, Smoke, Sparkles
-    Particles = {},
-    
-    -- Sounds
-    Sounds = {},
-    
-    -- Decals/Textures
-    Decals = {},
-    Textures = {},
-    
-    -- Beams/Trails
-    Beams = {},
-    Trails = {},
-    
-    -- MeshParts/SpecialMeshes
-    Meshes = {},
-    
-    -- 3D Rendering
-    RenderingEnabled = true,
-    
-    -- Black Screen Frame
-    BlackScreenFrame = nil,
-}
-
--- Ham luu cai dat goc
-local function SaveOriginalSettings()
-    if OriginalSettings.Saved then return end
-    OriginalSettings.Saved = true
-    
-    pcall(function()
-        -- Luu Lighting
-        OriginalSettings.GlobalShadows = Lighting.GlobalShadows
-        OriginalSettings.FogEnd = Lighting.FogEnd
-        OriginalSettings.FogStart = Lighting.FogStart
-        OriginalSettings.FogColor = Lighting.FogColor
-        OriginalSettings.Brightness = Lighting.Brightness
-        OriginalSettings.ClockTime = Lighting.ClockTime
-        OriginalSettings.OutdoorAmbient = Lighting.OutdoorAmbient
-        OriginalSettings.Ambient = Lighting.Ambient
-        
-        -- Luu Lighting Effects (Blur, SunRays, ColorCorrection, Bloom, Atmosphere)
-        for _, effect in pairs(Lighting:GetChildren()) do
-            if effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") 
-                or effect:IsA("ColorCorrectionEffect") or effect:IsA("BloomEffect")
-                or effect:IsA("Atmosphere") or effect:IsA("DepthOfFieldEffect") then
-                table.insert(OriginalSettings.LightingEffects, {
-                    Object = effect,
-                    Enabled = effect.Enabled,
-                    Parent = effect.Parent
-                })
-            end
-        end
-        
-        -- Luu Terrain
-        local terrain = Workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            OriginalSettings.Terrain.WaterWaveSize = terrain.WaterWaveSize
-            OriginalSettings.Terrain.WaterWaveSpeed = terrain.WaterWaveSpeed
-            OriginalSettings.Terrain.WaterReflectance = terrain.WaterReflectance
-            OriginalSettings.Terrain.WaterTransparency = terrain.WaterTransparency
-            OriginalSettings.Terrain.Decoration = terrain.Decoration
+    local success, err = pcall(function()
+        if writefile then
+            local configData = HttpService:JSONEncode(self.Settings)
+            writefile("AntiLagCore_Config.json", configData)
         end
     end)
     
-    print("[SunnyHubPro] Da luu cai dat goc de khoi phuc sau.")
-end
-
--- Ham khoi phuc 100% cai dat goc
-local function RestoreAllSettings()
-    if not OriginalSettings.Saved then return end
-    
-    pcall(function()
-        -- Khoi phuc Lighting
-        if OriginalSettings.GlobalShadows ~= nil then
-            Lighting.GlobalShadows = OriginalSettings.GlobalShadows
-        end
-        if OriginalSettings.FogEnd then
-            Lighting.FogEnd = OriginalSettings.FogEnd
-        end
-        if OriginalSettings.FogStart then
-            Lighting.FogStart = OriginalSettings.FogStart
-        end
-        if OriginalSettings.FogColor then
-            Lighting.FogColor = OriginalSettings.FogColor
-        end
-        if OriginalSettings.Brightness then
-            Lighting.Brightness = OriginalSettings.Brightness
-        end
-        if OriginalSettings.OutdoorAmbient then
-            Lighting.OutdoorAmbient = OriginalSettings.OutdoorAmbient
-        end
-        if OriginalSettings.Ambient then
-            Lighting.Ambient = OriginalSettings.Ambient
-        end
-        
-        -- Khoi phuc Lighting Effects
-        for _, data in pairs(OriginalSettings.LightingEffects) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Enabled = data.Enabled
-                end
-            end)
-        end
-        
-        -- Khoi phuc Terrain
-        local terrain = Workspace:FindFirstChildOfClass("Terrain")
-        if terrain and OriginalSettings.Terrain.WaterWaveSize then
-            terrain.WaterWaveSize = OriginalSettings.Terrain.WaterWaveSize
-            terrain.WaterWaveSpeed = OriginalSettings.Terrain.WaterWaveSpeed
-            terrain.WaterReflectance = OriginalSettings.Terrain.WaterReflectance
-            terrain.WaterTransparency = OriginalSettings.Terrain.WaterTransparency
-            if OriginalSettings.Terrain.Decoration ~= nil then
-                terrain.Decoration = OriginalSettings.Terrain.Decoration
-            end
-        end
-        
-        -- Khoi phuc Parts
-        for part, data in pairs(OriginalSettings.ModifiedParts) do
-            pcall(function()
-                if part and part.Parent then
-                    if data.Material then part.Material = data.Material end
-                    if data.CastShadow ~= nil then part.CastShadow = data.CastShadow end
-                    if data.Transparency ~= nil then part.Transparency = data.Transparency end
-                    if data.Reflectance ~= nil then part.Reflectance = data.Reflectance end
-                end
-            end)
-        end
-        OriginalSettings.ModifiedParts = {}
-        
-        -- Khoi phuc Particles
-        for _, data in pairs(OriginalSettings.Particles) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Enabled = data.Enabled
-                end
-            end)
-        end
-        OriginalSettings.Particles = {}
-        
-        -- Khoi phuc Sounds
-        for _, data in pairs(OriginalSettings.Sounds) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Volume = data.Volume
-                end
-            end)
-        end
-        OriginalSettings.Sounds = {}
-        
-        -- Khoi phuc Decals
-        for _, data in pairs(OriginalSettings.Decals) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Transparency = data.Transparency
-                end
-            end)
-        end
-        OriginalSettings.Decals = {}
-        
-        -- Khoi phuc Textures
-        for _, data in pairs(OriginalSettings.Textures) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Transparency = data.Transparency
-                end
-            end)
-        end
-        OriginalSettings.Textures = {}
-        
-        -- Khoi phuc Beams
-        for _, data in pairs(OriginalSettings.Beams) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Enabled = data.Enabled
-                end
-            end)
-        end
-        OriginalSettings.Beams = {}
-        
-        -- Khoi phuc Trails
-        for _, data in pairs(OriginalSettings.Trails) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    data.Object.Enabled = data.Enabled
-                end
-            end)
-        end
-        OriginalSettings.Trails = {}
-        
-        -- Khoi phuc Meshes
-        for _, data in pairs(OriginalSettings.Meshes) do
-            pcall(function()
-                if data.Object and data.Object.Parent then
-                    if data.TextureId ~= nil then data.Object.TextureId = data.TextureId end
-                end
-            end)
-        end
-        OriginalSettings.Meshes = {}
-        
-        -- Khoi phuc 3D Rendering
-        pcall(function()
-            if typeof(RunService.Set3dRenderingEnabled) == "function" then
-                RunService:Set3dRenderingEnabled(true)
-            end
-        end)
-        
-        -- Xoa Black Screen Frame neu co
-        if OriginalSettings.BlackScreenFrame then
-            pcall(function()
-                OriginalSettings.BlackScreenFrame:Destroy()
-                OriginalSettings.BlackScreenFrame = nil
-            end)
-        end
-    end)
-    
-    print("[SunnyHubPro] Da khoi phuc 100% cai dat goc!")
-end
-
--- =================== LAG REDUCTION CONNECTIONS ===================
-local LagReductionConnections = {}
-
-local function DisconnectLagReductionEvents()
-    for _, conn in pairs(LagReductionConnections) do
-        pcall(function()
-            if conn and conn.Connected then
-                conn:Disconnect()
-            end
-        end)
+    if not success and self.Settings.DebugMode then
+        warn("[AntiLagCore] Không thể lưu cấu hình: " .. tostring(err))
     end
-    LagReductionConnections = {}
 end
 
--- =================== CHE DO GIAM LAG ===================
-
--- Che do 1: Co ban (Yeu)
-local function ApplyBasicLagReduction()
-    SaveOriginalSettings()
-    
-    pcall(function()
-        -- Tat hieu ung do bong
-        Lighting.GlobalShadows = false
-        
-        -- Giam chat luong suong mu
-        Lighting.FogEnd = 999999
-        
-        -- Khoa FPS neu co the (executor ho tro)
-        if typeof(setfpscap) == "function" then
-            setfpscap(60)
-        end
-    end)
-    
-    print("[SunnyHubPro] Che do 1: Co ban - Da tat shadow, giam suong mu")
-end
-
--- Che do 2: Nang cao (Vua)
-local function ApplyAdvancedLagReduction()
-    SaveOriginalSettings()
-    
-    pcall(function()
-        -- Ap dung tat ca cua che do 1
-        Lighting.GlobalShadows = false
-        Lighting.FogEnd = 999999
-        
-        -- An hieu ung moi truong
-        for _, effect in pairs(Lighting:GetChildren()) do
-            if effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") 
-                or effect:IsA("ColorCorrectionEffect") or effect:IsA("BloomEffect")
-                or effect:IsA("Atmosphere") or effect:IsA("DepthOfFieldEffect") then
-                if effect.Enabled then
-                    effect.Enabled = false
-                end
-            end
-        end
-        
-        -- Giam Terrain
-        local terrain = Workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            terrain.WaterWaveSize = 0
-            terrain.WaterWaveSpeed = 0
-            terrain.WaterReflectance = 0
-        end
-        
-        -- Thay doi Material thanh SmoothPlastic va tat CastShadow
-        for _, part in pairs(Workspace:GetDescendants()) do
-            if part:IsA("BasePart") then
-                if not OriginalSettings.ModifiedParts[part] then
-                    OriginalSettings.ModifiedParts[part] = {
-                        Material = part.Material,
-                        CastShadow = part.CastShadow,
-                        Reflectance = part.Reflectance
-                    }
-                end
-                part.Material = Enum.Material.SmoothPlastic
-                part.CastShadow = false
-                part.Reflectance = 0
-            end
-        end
-        
-        -- Tat Particles, Fire, Smoke, Sparkles
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-                if obj.Enabled then
-                    table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                    obj.Enabled = false
-                end
-            end
-        end
-        
-        -- Tat Beams va Trails
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("Beam") and obj.Enabled then
-                table.insert(OriginalSettings.Beams, {Object = obj, Enabled = true})
-                obj.Enabled = false
-            elseif obj:IsA("Trail") and obj.Enabled then
-                table.insert(OriginalSettings.Trails, {Object = obj, Enabled = true})
-                obj.Enabled = false
-            end
-        end
-        
-        -- Event-driven: Tu dong toi uu part moi xuat hien
-        local descendantAddedConn = Workspace.DescendantAdded:Connect(function(obj)
-            if not ScriptRunning or Config.LagMode ~= 2 then return end
+-- Hàm tải cấu hình
+function ConfigModule:LoadConfig()
+    local success, err = pcall(function()
+        if readfile and isfile and isfile("AntiLagCore_Config.json") then
+            local configData = readfile("AntiLagCore_Config.json")
+            local loadedSettings = HttpService:JSONDecode(configData)
             
-            task.defer(function()
-                pcall(function()
-                    if obj:IsA("BasePart") then
-                        if not OriginalSettings.ModifiedParts[obj] then
-                            OriginalSettings.ModifiedParts[obj] = {
-                                Material = obj.Material,
-                                CastShadow = obj.CastShadow,
-                                Reflectance = obj.Reflectance
-                            }
-                        end
-                        obj.Material = Enum.Material.SmoothPlastic
-                        obj.CastShadow = false
-                        obj.Reflectance = 0
-                    elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-                        if obj.Enabled then
-                            table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                            obj.Enabled = false
-                        end
-                    elseif obj:IsA("Beam") and obj.Enabled then
-                        table.insert(OriginalSettings.Beams, {Object = obj, Enabled = true})
-                        obj.Enabled = false
-                    elseif obj:IsA("Trail") and obj.Enabled then
-                        table.insert(OriginalSettings.Trails, {Object = obj, Enabled = true})
-                        obj.Enabled = false
-                    end
-                end)
-            end)
-        end)
-        table.insert(LagReductionConnections, descendantAddedConn)
+            -- Merge với settings mặc định (để có các key mới)
+            for key, value in pairs(loadedSettings) do
+                if self.Settings[key] ~= nil then
+                    self.Settings[key] = value
+                end
+            end
+        end
     end)
     
-    print("[SunnyHubPro] Che do 2: Nang cao - Da an hieu ung moi truong, thay doi Material")
+    if not success and self.Settings.DebugMode then
+        warn("[AntiLagCore] Không thể tải cấu hình: " .. tostring(err))
+    end
 end
 
--- Che do 3: Sieu toi gian / Treo may xuyen dem
-local function ApplyExtremeReduction()
-    SaveOriginalSettings()
+-- Hàm reset cấu hình về mặc định
+function ConfigModule:ResetConfig()
+    self.Settings = {
+        ScriptEnabled = true,
+        DebugMode = false,
+        AutoSaveConfig = true,
+        LagReductionMode = 0,
+        BlackScreenEnabled = false,
+        FPSCapEnabled = false,
+        FPSCapValue = 60,
+        AutoGarbageCollection = false,
+        GCInterval = 30,
+        CurrentProfile = "Default",
+        UIScale = 1,
+        UITransparency = 0.1,
+        DragEnabled = true,
+        MinimizeOnStart = false
+    }
+    self:SaveConfig()
+end
+
+--============================================================================--
+--                         MODULE: UTILITIES                                   --
+--  Các hàm tiện ích dùng chung                                               --
+--============================================================================--
+
+local UtilsModule = {}
+
+-- Hàm kiểm tra Instance có hợp lệ không
+function UtilsModule:IsValidInstance(instance)
+    return instance and typeof(instance) == "Instance" and instance.Parent ~= nil
+end
+
+-- Hàm lấy khoảng cách từ Player đến một Part
+function UtilsModule:GetDistanceFromPlayer(part)
+    if not self:IsValidInstance(part) then return math.huge end
+    if not LocalPlayer.Character then return math.huge end
     
+    local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return math.huge end
+    
+    local partPosition
+    if part:IsA("BasePart") then
+        partPosition = part.Position
+    elseif part:IsA("Model") then
+        local primaryPart = part.PrimaryPart or part:FindFirstChildWhichIsA("BasePart")
+        if primaryPart then
+            partPosition = primaryPart.Position
+        else
+            return math.huge
+        end
+    else
+        return math.huge
+    end
+    
+    return (humanoidRootPart.Position - partPosition).Magnitude
+end
+
+-- Hàm lấy kích thước của Model
+function UtilsModule:GetModelSize(model)
+    if not self:IsValidInstance(model) then return 0 end
+    
+    local success, result = pcall(function()
+        if model:IsA("Model") then
+            local cf, size = model:GetBoundingBox()
+            return math.max(size.X, size.Y, size.Z)
+        elseif model:IsA("BasePart") then
+            return math.max(model.Size.X, model.Size.Y, model.Size.Z)
+        end
+        return 0
+    end)
+    
+    return success and result or 0
+end
+
+-- Hàm đăng ký Connection với cleanup tự động
+function UtilsModule:RegisterConnection(connection, category)
+    category = category or "General"
+    
+    if not ConfigModule.State.ActiveConnections[category] then
+        ConfigModule.State.ActiveConnections[category] = {}
+    end
+    
+    table.insert(ConfigModule.State.ActiveConnections[category], connection)
+    return connection
+end
+
+-- Hàm cleanup tất cả Connection theo category
+function UtilsModule:CleanupConnections(category)
+    if category then
+        -- Cleanup một category cụ thể
+        local connections = ConfigModule.State.ActiveConnections[category]
+        if connections then
+            for _, connection in ipairs(connections) do
+                if typeof(connection) == "RBXScriptConnection" then
+                    connection:Disconnect()
+                end
+            end
+            ConfigModule.State.ActiveConnections[category] = {}
+        end
+    else
+        -- Cleanup tất cả
+        for cat, connections in pairs(ConfigModule.State.ActiveConnections) do
+            for _, connection in ipairs(connections) do
+                if typeof(connection) == "RBXScriptConnection" then
+                    connection:Disconnect()
+                end
+            end
+        end
+        ConfigModule.State.ActiveConnections = {}
+    end
+end
+
+-- Hàm format số với đơn vị (KB, MB, GB)
+function UtilsModule:FormatBytes(bytes)
+    if bytes < 1024 then
+        return string.format("%.0f B", bytes)
+    elseif bytes < 1048576 then
+        return string.format("%.2f KB", bytes / 1024)
+    elseif bytes < 1073741824 then
+        return string.format("%.2f MB", bytes / 1048576)
+    else
+        return string.format("%.2f GB", bytes / 1073741824)
+    end
+end
+
+-- Hàm format thời gian
+function UtilsModule:FormatTime(seconds)
+    local hours = math.floor(seconds / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    local secs = seconds % 60
+    
+    if hours > 0 then
+        return string.format("%02d:%02d:%02d", hours, minutes, secs)
+    else
+        return string.format("%02d:%02d", minutes, secs)
+    end
+end
+
+-- Hàm tạo UUID ngẫu nhiên
+function UtilsModule:GenerateUUID()
+    local template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+    return string.gsub(template, "[xy]", function(c)
+        local v = (c == "x") and math.random(0, 15) or math.random(8, 11)
+        return string.format("%x", v)
+    end)
+end
+
+-- Hàm deep clone table
+function UtilsModule:DeepClone(original)
+    local clone = {}
+    for key, value in pairs(original) do
+        if type(value) == "table" then
+            clone[key] = self:DeepClone(value)
+        else
+            clone[key] = value
+        end
+    end
+    return clone
+end
+
+-- Hàm lerp cho animation
+function UtilsModule:Lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+-- Hàm easing (Quad Out)
+function UtilsModule:EaseOutQuad(t)
+    return 1 - (1 - t) * (1 - t)
+end
+
+-- Hàm easing (Quad In Out)
+function UtilsModule:EaseInOutQuad(t)
+    if t < 0.5 then
+        return 2 * t * t
+    else
+        return 1 - math.pow(-2 * t + 2, 2) / 2
+    end
+end
+
+--============================================================================--
+--                         MODULE: OPTIMIZATION                                --
+--  Chứa tất cả logic tối ưu hóa hiệu năng                                    --
+--============================================================================--
+
+local OptimizeModule = {}
+
+-- Cache các giá trị Lighting gốc
+function OptimizeModule:CacheLightingValues()
+    local lighting = ConfigModule.State.OriginalLighting
+    
+    lighting.GlobalShadows = Lighting.GlobalShadows
+    lighting.FogEnd = Lighting.FogEnd
+    lighting.FogStart = Lighting.FogStart
+    lighting.Brightness = Lighting.Brightness
+    lighting.ClockTime = Lighting.ClockTime
+    lighting.GeographicLatitude = Lighting.GeographicLatitude
+    lighting.OutdoorAmbient = Lighting.OutdoorAmbient
+    lighting.Ambient = Lighting.Ambient
+    lighting.ColorShift_Bottom = Lighting.ColorShift_Bottom
+    lighting.ColorShift_Top = Lighting.ColorShift_Top
+    lighting.EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale
+    lighting.EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale
+    lighting.ShadowSoftness = Lighting.ShadowSoftness
+    lighting.Technology = Lighting.Technology
+end
+
+-- Khôi phục Lighting về giá trị gốc
+function OptimizeModule:RestoreLightingValues()
+    local lighting = ConfigModule.State.OriginalLighting
+    
+    if next(lighting) then
+        pcall(function()
+            Lighting.GlobalShadows = lighting.GlobalShadows
+            Lighting.FogEnd = lighting.FogEnd
+            Lighting.FogStart = lighting.FogStart
+            Lighting.Brightness = lighting.Brightness
+            Lighting.OutdoorAmbient = lighting.OutdoorAmbient
+            Lighting.Ambient = lighting.Ambient
+        end)
+    end
+end
+
+--============================================================================--
+--                    CHẾ ĐỘ 1: GIẢM LAG CƠ BẢN (YẾU)                          --
+--============================================================================--
+
+function OptimizeModule:ApplyBasicOptimization()
+    -- Cleanup connections cũ trước
+    UtilsModule:CleanupConnections("BasicOptimization")
+    
+    -- Cache lighting values nếu chưa có
+    if not next(ConfigModule.State.OriginalLighting) then
+        self:CacheLightingValues()
+    end
+    
+    -- Tắt Global Shadows
     pcall(function()
-        -- Ap dung tat ca cua che do 2
         Lighting.GlobalShadows = false
-        Lighting.FogEnd = 200
-        Lighting.FogStart = 0
-        Lighting.FogColor = Color3.fromRGB(0, 0, 0)
-        
-        -- An hieu ung moi truong
-        for _, effect in pairs(Lighting:GetChildren()) do
-            if effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") 
-                or effect:IsA("ColorCorrectionEffect") or effect:IsA("BloomEffect")
-                or effect:IsA("Atmosphere") or effect:IsA("DepthOfFieldEffect") then
+    end)
+    
+    -- Giảm sương mù
+    pcall(function()
+        Lighting.FogEnd = 999999
+        Lighting.FogStart = 999998
+    end)
+    
+    -- Giảm độ sáng môi trường nhẹ
+    pcall(function()
+        Lighting.EnvironmentDiffuseScale = 0.5
+        Lighting.EnvironmentSpecularScale = 0.5
+    end)
+    
+    -- Áp dụng FPS Cap nếu được bật
+    if ConfigModule.Settings.FPSCapEnabled then
+        self:SetFPSCap(ConfigModule.Settings.FPSCapValue)
+    end
+    
+    ConfigModule.State.PartsOptimized = ConfigModule.State.PartsOptimized + 1
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã áp dụng tối ưu cơ bản")
+    end
+end
+
+--============================================================================--
+--                    CHẾ ĐỘ 2: TỐI ƯU NÂNG CAO (VỪA)                          --
+--============================================================================--
+
+function OptimizeModule:ApplyAdvancedOptimization()
+    -- Cleanup connections cũ
+    UtilsModule:CleanupConnections("AdvancedOptimization")
+    
+    -- Áp dụng tối ưu cơ bản trước
+    self:ApplyBasicOptimization()
+    
+    -- Ẩn tất cả hiệu ứng Lighting
+    for _, effectName in ipairs(ConfigModule.OptimizationTargets.Effects) do
+        for _, effect in ipairs(Lighting:GetChildren()) do
+            if effect:IsA(effectName) then
+                -- Lưu trạng thái gốc
+                if not ConfigModule.State.OriginalEffects[effect] then
+                    ConfigModule.State.OriginalEffects[effect] = effect.Enabled
+                end
                 effect.Enabled = false
+                ConfigModule.State.EffectsRemoved = ConfigModule.State.EffectsRemoved + 1
+            end
+        end
+    end
+    
+    -- Xử lý Atmosphere riêng
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("Atmosphere") then
+            if not ConfigModule.State.OriginalEffects[child] then
+                ConfigModule.State.OriginalEffects[child] = {
+                    Density = child.Density,
+                    Offset = child.Offset
+                }
+            end
+            child.Density = 0
+            child.Offset = 0
+        end
+    end
+    
+    -- Đơn giản hóa Materials cho tất cả Parts hiện có
+    self:SimplifyAllMaterials()
+    
+    -- Đăng ký Event để tối ưu Parts mới
+    local descendantConnection = Workspace.DescendantAdded:Connect(function(descendant)
+        task.defer(function()
+            if descendant:IsA("BasePart") then
+                self:SimplifyPartMaterial(descendant)
+            elseif self:ShouldHideInstance(descendant) then
+                self:HideInstance(descendant)
+            end
+        end)
+    end)
+    
+    UtilsModule:RegisterConnection(descendantConnection, "AdvancedOptimization")
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã áp dụng tối ưu nâng cao")
+    end
+end
+
+-- Đơn giản hóa Material của một Part
+function OptimizeModule:SimplifyPartMaterial(part)
+    if not UtilsModule:IsValidInstance(part) then return end
+    if not part:IsA("BasePart") then return end
+    
+    -- Lưu Material gốc
+    if not ConfigModule.State.OriginalMaterials[part] then
+        ConfigModule.State.OriginalMaterials[part] = part.Material
+    end
+    
+    -- Chuyển sang SmoothPlastic (nhẹ nhất)
+    pcall(function()
+        part.Material = Enum.Material.SmoothPlastic
+        part.Reflectance = 0
+    end)
+    
+    ConfigModule.State.PartsOptimized = ConfigModule.State.PartsOptimized + 1
+end
+
+-- Đơn giản hóa Material cho tất cả Parts trong Workspace
+function OptimizeModule:SimplifyAllMaterials()
+    local count = 0
+    local batchSize = 50
+    local currentBatch = 0
+    
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("BasePart") then
+            self:SimplifyPartMaterial(descendant)
+            count = count + 1
+            currentBatch = currentBatch + 1
+            
+            -- Yield sau mỗi batch để không gây lag
+            if currentBatch >= batchSize then
+                currentBatch = 0
+                task.wait()
+            end
+        end
+    end
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã đơn giản hóa " .. count .. " Parts")
+    end
+end
+
+-- Kiểm tra xem có nên ẩn Instance không
+function OptimizeModule:ShouldHideInstance(instance)
+    local profile = ConfigModule.GameProfiles[ConfigModule.Settings.CurrentProfile]
+    if not profile then return false end
+    
+    local settings = profile.Settings
+    
+    -- Kiểm tra Particles
+    if settings.HideParticles then
+        for _, particleType in ipairs(ConfigModule.OptimizationTargets.Particles) do
+            if instance:IsA(particleType) then
+                return true
+            end
+        end
+    end
+    
+    -- Kiểm tra Decals/Textures
+    if settings.HideDecals and instance:IsA("Decal") then
+        return true
+    end
+    
+    if settings.HideTextures and instance:IsA("Texture") then
+        return true
+    end
+    
+    return false
+end
+
+-- Ẩn một Instance
+function OptimizeModule:HideInstance(instance)
+    if not UtilsModule:IsValidInstance(instance) then return end
+    
+    pcall(function()
+        if instance:IsA("ParticleEmitter") or instance:IsA("Trail") or 
+           instance:IsA("Beam") or instance:IsA("Fire") or 
+           instance:IsA("Smoke") or instance:IsA("Sparkles") then
+            instance.Enabled = false
+        elseif instance:IsA("Decal") or instance:IsA("Texture") then
+            instance.Transparency = 1
+        elseif instance:IsA("Sound") then
+            instance.Volume = 0
+        end
+    end)
+    
+    ConfigModule.State.EffectsRemoved = ConfigModule.State.EffectsRemoved + 1
+end
+
+--============================================================================--
+--                 CHẾ ĐỘ 3: SIÊU TỐI GIẢN (MẠNH NHẤT)                         --
+--============================================================================--
+
+function OptimizeModule:ApplyExtremeOptimization()
+    -- Cleanup connections cũ
+    UtilsModule:CleanupConnections("ExtremeOptimization")
+    
+    -- Áp dụng tối ưu nâng cao trước
+    self:ApplyAdvancedOptimization()
+    
+    -- Xóa tất cả Particles, Trails, Beams
+    self:RemoveAllParticleEffects()
+    
+    -- Xóa tất cả Decals và Textures
+    self:RemoveAllVisualEffects()
+    
+    -- Xóa Skybox
+    self:RemoveSkybox()
+    
+    -- Tối ưu Terrain
+    self:OptimizeTerrain()
+    
+    -- Giảm chất lượng nước và kính
+    self:OptimizeMaterialService()
+    
+    -- Đăng ký Event để xóa effects mới
+    local descendantConnection = Workspace.DescendantAdded:Connect(function(descendant)
+        task.defer(function()
+            self:ProcessNewDescendant(descendant)
+        end)
+    end)
+    
+    UtilsModule:RegisterConnection(descendantConnection, "ExtremeOptimization")
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã áp dụng tối ưu siêu mạnh")
+    end
+end
+
+-- Xóa tất cả Particle Effects
+function OptimizeModule:RemoveAllParticleEffects()
+    local count = 0
+    local batchSize = 100
+    local currentBatch = 0
+    
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        for _, particleType in ipairs(ConfigModule.OptimizationTargets.Particles) do
+            if descendant:IsA(particleType) then
+                pcall(function()
+                    descendant.Enabled = false
+                    -- Đối với Trail và Beam, reset thêm
+                    if descendant:IsA("Trail") then
+                        descendant.Lifetime = 0
+                    end
+                end)
+                count = count + 1
+                break
             end
         end
         
-        -- Giam Terrain
+        currentBatch = currentBatch + 1
+        if currentBatch >= batchSize then
+            currentBatch = 0
+            task.wait()
+        end
+    end
+    
+    ConfigModule.State.EffectsRemoved = ConfigModule.State.EffectsRemoved + count
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã xóa " .. count .. " Particle Effects")
+    end
+end
+
+-- Xóa tất cả Visual Effects (Decals, Textures)
+function OptimizeModule:RemoveAllVisualEffects()
+    local count = 0
+    local batchSize = 100
+    local currentBatch = 0
+    
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        for _, visualType in ipairs(ConfigModule.OptimizationTargets.Visuals) do
+            if descendant:IsA(visualType) then
+                pcall(function()
+                    descendant.Transparency = 1
+                    if descendant:IsA("SurfaceAppearance") then
+                        descendant:Destroy()
+                    end
+                end)
+                count = count + 1
+                break
+            end
+        end
+        
+        currentBatch = currentBatch + 1
+        if currentBatch >= batchSize then
+            currentBatch = 0
+            task.wait()
+        end
+    end
+    
+    ConfigModule.State.EffectsRemoved = ConfigModule.State.EffectsRemoved + count
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã xóa " .. count .. " Visual Effects")
+    end
+end
+
+-- Xóa Skybox
+function OptimizeModule:RemoveSkybox()
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") then
+            pcall(function()
+                child.SkyboxBk = ""
+                child.SkyboxDn = ""
+                child.SkyboxFt = ""
+                child.SkyboxLf = ""
+                child.SkyboxRt = ""
+                child.SkyboxUp = ""
+                child.SunTextureId = ""
+                child.MoonTextureId = ""
+            end)
+        end
+    end
+end
+
+-- Tối ưu Terrain
+function OptimizeModule:OptimizeTerrain()
+    pcall(function()
         local terrain = Workspace:FindFirstChildOfClass("Terrain")
         if terrain then
             terrain.WaterWaveSize = 0
             terrain.WaterWaveSpeed = 0
             terrain.WaterReflectance = 0
-            terrain.WaterTransparency = 1
-            pcall(function() terrain.Decoration = false end)
+            terrain.WaterTransparency = 0
+        end
+    end)
+end
+
+-- Tối ưu MaterialService (Nước, Kính)
+function OptimizeModule:OptimizeMaterialService()
+    pcall(function()
+        -- Lấy hoặc tạo MaterialVariant cho Glass
+        local glassVariant = MaterialService:FindFirstChild("Glass")
+        if not glassVariant then
+            glassVariant = Instance.new("MaterialVariant")
+            glassVariant.Name = "Glass"
+            glassVariant.BaseMaterial = Enum.Material.Glass
+            glassVariant.Parent = MaterialService
         end
         
-        -- Xu ly tat ca Parts
-        for _, part in pairs(Workspace:GetDescendants()) do
-            pcall(function()
-                if part:IsA("BasePart") then
-                    if not OriginalSettings.ModifiedParts[part] then
-                        OriginalSettings.ModifiedParts[part] = {
-                            Material = part.Material,
-                            CastShadow = part.CastShadow,
-                            Reflectance = part.Reflectance,
-                            Transparency = part.Transparency
-                        }
-                    end
-                    part.Material = Enum.Material.SmoothPlastic
-                    part.CastShadow = false
-                    part.Reflectance = 0
-                end
-            end)
+        -- Đơn giản hóa Glass
+        if glassVariant:IsA("MaterialVariant") then
+            glassVariant.StudsPerTile = 10
         end
-        
-        -- Xoa/An Texture, Decal, Skybox
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            pcall(function()
-                if obj:IsA("Decal") and obj.Transparency < 1 then
-                    table.insert(OriginalSettings.Decals, {Object = obj, Transparency = obj.Transparency})
-                    obj.Transparency = 1
-                elseif obj:IsA("Texture") and obj.Transparency < 1 then
-                    table.insert(OriginalSettings.Textures, {Object = obj, Transparency = obj.Transparency})
-                    obj.Transparency = 1
-                end
-            end)
-        end
-        
-        -- Tat tat ca Particles, Fire, Smoke, Sparkles, Beams, Trails
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            pcall(function()
-                if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-                    if obj.Enabled then
-                        table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                        obj.Enabled = false
-                    end
-                elseif obj:IsA("Beam") and obj.Enabled then
-                    table.insert(OriginalSettings.Beams, {Object = obj, Enabled = true})
-                    obj.Enabled = false
-                elseif obj:IsA("Trail") and obj.Enabled then
-                    table.insert(OriginalSettings.Trails, {Object = obj, Enabled = true})
-                    obj.Enabled = false
-                end
-            end)
-        end
-        
-        -- Giam am thanh
-        for _, sound in pairs(Workspace:GetDescendants()) do
-            pcall(function()
-                if sound:IsA("Sound") and sound.Volume > 0 then
-                    local isPlayerSound = LP.Character and sound:IsDescendantOf(LP.Character)
-                    if not isPlayerSound then
-                        table.insert(OriginalSettings.Sounds, {Object = sound, Volume = sound.Volume})
-                        sound.Volume = 0
-                    end
-                end
-            end)
-        end
-        
-        -- An Mesh Textures
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            pcall(function()
-                if obj:IsA("MeshPart") or obj:IsA("SpecialMesh") then
-                    if obj.TextureId and obj.TextureId ~= "" then
-                        table.insert(OriginalSettings.Meshes, {Object = obj, TextureId = obj.TextureId})
-                        obj.TextureId = ""
-                    end
-                end
-            end)
-        end
-        
-        -- Thu tat 3D Rendering (neu Executor ho tro)
-        pcall(function()
-            if typeof(RunService.Set3dRenderingEnabled) == "function" then
-                RunService:Set3dRenderingEnabled(false)
-                OriginalSettings.RenderingEnabled = false
-            end
-        end)
-        
-        -- Neu khong tat duoc 3D Rendering thi tao man hinh den
-        if OriginalSettings.RenderingEnabled ~= false then
-            pcall(function()
-                local blackGui = Instance.new("ScreenGui")
-                blackGui.Name = "SunnyHub_BlackScreen"
-                blackGui.ResetOnSpawn = false
-                blackGui.IgnoreGuiInset = true
-                blackGui.DisplayOrder = 999999
-                
-                local ok = pcall(function() blackGui.Parent = CoreGui end)
-                if not ok then blackGui.Parent = PlayerGui end
-                
-                local blackFrame = Instance.new("Frame", blackGui)
-                blackFrame.Size = UDim2.new(1, 0, 1, 0)
-                blackFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                blackFrame.BorderSizePixel = 0
-                blackFrame.ZIndex = 999
-                
-                local infoLabel = Instance.new("TextLabel", blackFrame)
-                infoLabel.Size = UDim2.new(1, 0, 0, 100)
-                infoLabel.Position = UDim2.new(0, 0, 0.5, -50)
-                infoLabel.BackgroundTransparency = 1
-                infoLabel.Font = Enum.Font.GothamBold
-                infoLabel.TextSize = 24
-                infoLabel.TextColor3 = Color3.fromRGB(0, 220, 130)
-                infoLabel.Text = "CHE DO TREO MAY - TIET KIEM DIEN\nNhan phim ToggleKey de mo menu"
-                infoLabel.TextWrapped = true
-                infoLabel.ZIndex = 1000
-                
-                OriginalSettings.BlackScreenFrame = blackGui
-            end)
-        end
-        
-        -- Event-driven: Tu dong toi uu part moi
-        local descendantAddedConn = Workspace.DescendantAdded:Connect(function(obj)
-            if not ScriptRunning or Config.LagMode ~= 3 then return end
-            
-            task.defer(function()
+    end)
+end
+
+-- Xử lý Descendant mới (cho Event-driven)
+function OptimizeModule:ProcessNewDescendant(descendant)
+    if not UtilsModule:IsValidInstance(descendant) then return end
+    
+    local mode = ConfigModule.Settings.LagReductionMode
+    
+    if mode >= 3 then
+        -- Chế độ siêu mạnh: xóa hầu hết effects
+        for _, particleType in ipairs(ConfigModule.OptimizationTargets.Particles) do
+            if descendant:IsA(particleType) then
                 pcall(function()
-                    if obj:IsA("BasePart") then
-                        if not OriginalSettings.ModifiedParts[obj] then
-                            OriginalSettings.ModifiedParts[obj] = {
-                                Material = obj.Material,
-                                CastShadow = obj.CastShadow,
-                                Reflectance = obj.Reflectance
-                            }
-                        end
-                        obj.Material = Enum.Material.SmoothPlastic
-                        obj.CastShadow = false
-                        obj.Reflectance = 0
-                    elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-                        if obj.Enabled then
-                            table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                            obj.Enabled = false
-                        end
-                    elseif obj:IsA("Beam") and obj.Enabled then
-                        table.insert(OriginalSettings.Beams, {Object = obj, Enabled = true})
-                        obj.Enabled = false
-                    elseif obj:IsA("Trail") and obj.Enabled then
-                        table.insert(OriginalSettings.Trails, {Object = obj, Enabled = true})
-                        obj.Enabled = false
-                    elseif obj:IsA("Decal") and obj.Transparency < 1 then
-                        table.insert(OriginalSettings.Decals, {Object = obj, Transparency = obj.Transparency})
-                        obj.Transparency = 1
-                    elseif obj:IsA("Texture") and obj.Transparency < 1 then
-                        table.insert(OriginalSettings.Textures, {Object = obj, Transparency = obj.Transparency})
-                        obj.Transparency = 1
-                    end
+                    descendant.Enabled = false
                 end)
-            end)
-        end)
-        table.insert(LagReductionConnections, descendantAddedConn)
+                return
+            end
+        end
+        
+        for _, visualType in ipairs(ConfigModule.OptimizationTargets.Visuals) do
+            if descendant:IsA(visualType) then
+                pcall(function()
+                    descendant.Transparency = 1
+                end)
+                return
+            end
+        end
+    end
+    
+    if mode >= 2 then
+        -- Chế độ nâng cao: đơn giản hóa materials
+        if descendant:IsA("BasePart") then
+            self:SimplifyPartMaterial(descendant)
+        end
+    end
+end
+
+--============================================================================--
+--                    MÀN HÌNH ĐEN (BLACK SCREEN MODE)                         --
+--============================================================================--
+
+function OptimizeModule:EnableBlackScreen()
+    -- Kiểm tra xem có hỗ trợ Set3dRenderingEnabled không
+    local has3DRenderControl = pcall(function()
+        return RunService.Set3dRenderingEnabled
     end)
     
-    print("[SunnyHubPro] Che do 3: Sieu toi gian - Man hinh den, CPU/GPU nghi 99%")
-end
-
--- Ham chinh de ap dung che do giam lag
-local function ApplyLagMode(mode)
-    -- Disconnect cac event cu truoc
-    DisconnectLagReductionEvents()
-    
-    -- Khoi phuc truoc khi ap dung che do moi
-    if mode == 0 then
-        RestoreAllSettings()
-        Config.LagMode = 0
-        return
-    end
-    
-    Config.LagMode = mode
-    
-    if mode == 1 then
-        ApplyBasicLagReduction()
-    elseif mode == 2 then
-        ApplyAdvancedLagReduction()
-    elseif mode == 3 then
-        ApplyExtremeReduction()
-    end
-end
-
--- =================== GAME PROFILES ===================
-local ProfileConnections = {}
-
-local function DisconnectProfileEvents()
-    for _, conn in pairs(ProfileConnections) do
+    if has3DRenderControl then
+        -- Sử dụng Set3dRenderingEnabled nếu có
         pcall(function()
-            if conn and conn.Connected then
-                conn:Disconnect()
+            RunService:Set3dRenderingEnabled(false)
+        end)
+    else
+        -- Fallback: Tạo Frame đen phủ toàn màn hình
+        self:CreateBlackScreenOverlay()
+    end
+    
+    ConfigModule.Settings.BlackScreenEnabled = true
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã bật màn hình đen")
+    end
+end
+
+function OptimizeModule:DisableBlackScreen()
+    local has3DRenderControl = pcall(function()
+        return RunService.Set3dRenderingEnabled
+    end)
+    
+    if has3DRenderControl then
+        pcall(function()
+            RunService:Set3dRenderingEnabled(true)
+        end)
+    end
+    
+    -- Xóa overlay nếu có
+    self:RemoveBlackScreenOverlay()
+    
+    ConfigModule.Settings.BlackScreenEnabled = false
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã tắt màn hình đen")
+    end
+end
+
+function OptimizeModule:CreateBlackScreenOverlay()
+    -- Xóa overlay cũ nếu có
+    self:RemoveBlackScreenOverlay()
+    
+    -- Tạo ScreenGui mới
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AntiLagCore_BlackScreen"
+    screenGui.DisplayOrder = 999999
+    screenGui.IgnoreGuiInset = true
+    screenGui.ResetOnSpawn = false
+    
+    -- Tạo Frame đen
+    local blackFrame = Instance.new("Frame")
+    blackFrame.Name = "BlackOverlay"
+    blackFrame.Size = UDim2.new(1, 0, 1, 0)
+    blackFrame.Position = UDim2.new(0, 0, 0, 0)
+    blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    blackFrame.BackgroundTransparency = 0
+    blackFrame.BorderSizePixel = 0
+    blackFrame.ZIndex = 999999
+    blackFrame.Parent = screenGui
+    
+    -- Thêm text thông báo
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Name = "InfoLabel"
+    infoLabel.Size = UDim2.new(0.8, 0, 0, 100)
+    infoLabel.Position = UDim2.new(0.1, 0, 0.5, -50)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Font = Enum.Font.GothamBold
+    infoLabel.Text = "CHẾ ĐỘ TREO MÁY ĐANG BẬT\n\nCPU/GPU đang nghỉ ngơi\nNhấn phím bất kỳ hoặc click để tắt"
+    infoLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+    infoLabel.TextSize = 24
+    infoLabel.TextWrapped = true
+    infoLabel.ZIndex = 1000000
+    infoLabel.Parent = blackFrame
+    
+    -- Hiệu ứng nhấp nháy cho text
+    local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    local tween = TweenService:Create(infoLabel, tweenInfo, {TextTransparency = 0.5})
+    tween:Play()
+    
+    -- Parent vào CoreGui hoặc PlayerGui
+    local success = pcall(function()
+        screenGui.Parent = CoreGui
+    end)
+    
+    if not success then
+        screenGui.Parent = PlayerGui
+    end
+    
+    -- Đăng ký input để tắt
+    local inputConnection = UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed then
+            self:DisableBlackScreen()
+        end
+    end)
+    
+    UtilsModule:RegisterConnection(inputConnection, "BlackScreen")
+end
+
+function OptimizeModule:RemoveBlackScreenOverlay()
+    -- Tìm và xóa trong CoreGui
+    local coreGuiOverlay = CoreGui:FindFirstChild("AntiLagCore_BlackScreen")
+    if coreGuiOverlay then
+        coreGuiOverlay:Destroy()
+    end
+    
+    -- Tìm và xóa trong PlayerGui
+    local playerGuiOverlay = PlayerGui:FindFirstChild("AntiLagCore_BlackScreen")
+    if playerGuiOverlay then
+        playerGuiOverlay:Destroy()
+    end
+    
+    -- Cleanup connections
+    UtilsModule:CleanupConnections("BlackScreen")
+end
+
+--============================================================================--
+--                           FPS CAP CONTROL                                   --
+--============================================================================--
+
+function OptimizeModule:SetFPSCap(fps)
+    local success = pcall(function()
+        if setfpscap then
+            setfpscap(fps)
+        elseif set_fps_cap then
+            set_fps_cap(fps)
+        end
+    end)
+    
+    if success then
+        ConfigModule.Settings.FPSCapValue = fps
+        if ConfigModule.Settings.DebugMode then
+            print("[AntiLagCore] Đã đặt FPS Cap: " .. fps)
+        end
+    end
+end
+
+function OptimizeModule:RemoveFPSCap()
+    local success = pcall(function()
+        if setfpscap then
+            setfpscap(9999)
+        elseif set_fps_cap then
+            set_fps_cap(9999)
+        end
+    end)
+    
+    if success and ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã gỡ FPS Cap")
+    end
+end
+
+--============================================================================--
+--                    ÁP DỤNG CHẾ ĐỘ TỐI ƯU TỔNG HỢP                           --
+--============================================================================--
+
+function OptimizeModule:ApplyOptimizationMode(mode)
+    -- Cleanup tất cả connections cũ
+    UtilsModule:CleanupConnections("BasicOptimization")
+    UtilsModule:CleanupConnections("AdvancedOptimization")
+    UtilsModule:CleanupConnections("ExtremeOptimization")
+    
+    -- Reset state
+    ConfigModule.State.PartsOptimized = 0
+    ConfigModule.State.EffectsRemoved = 0
+    
+    ConfigModule.Settings.LagReductionMode = mode
+    
+    if mode == 0 then
+        -- Tắt tất cả tối ưu, khôi phục về gốc
+        self:RestoreAllSettings()
+    elseif mode == 1 then
+        self:ApplyBasicOptimization()
+    elseif mode == 2 then
+        self:ApplyAdvancedOptimization()
+    elseif mode == 3 then
+        self:ApplyExtremeOptimization()
+    end
+    
+    ConfigModule:SaveConfig()
+end
+
+-- Khôi phục tất cả settings về gốc
+function OptimizeModule:RestoreAllSettings()
+    -- Khôi phục Lighting
+    self:RestoreLightingValues()
+    
+    -- Khôi phục Effects
+    for effect, originalValue in pairs(ConfigModule.State.OriginalEffects) do
+        if UtilsModule:IsValidInstance(effect) then
+            pcall(function()
+                if typeof(originalValue) == "boolean" then
+                    effect.Enabled = originalValue
+                elseif typeof(originalValue) == "table" then
+                    for prop, val in pairs(originalValue) do
+                        effect[prop] = val
+                    end
+                end
+            end)
+        end
+    end
+    
+    -- Khôi phục Materials
+    for part, originalMaterial in pairs(ConfigModule.State.OriginalMaterials) do
+        if UtilsModule:IsValidInstance(part) then
+            pcall(function()
+                part.Material = originalMaterial
+            end)
+        end
+    end
+    
+    -- Gỡ FPS Cap
+    if ConfigModule.Settings.FPSCapEnabled then
+        self:RemoveFPSCap()
+    end
+    
+    -- Tắt Black Screen
+    if ConfigModule.Settings.BlackScreenEnabled then
+        self:DisableBlackScreen()
+    end
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã khôi phục tất cả settings")
+    end
+end
+
+--============================================================================--
+--                         MODULE: MEMORY CLEANER                              --
+--  Tối ưu hóa bộ nhớ và dọn rác                                              --
+--============================================================================--
+
+local MemoryModule = {}
+
+-- Lấy thông tin bộ nhớ hiện tại
+function MemoryModule:GetMemoryUsage()
+    local memoryKB = 0
+    
+    local success = pcall(function()
+        memoryKB = gcinfo()
+    end)
+    
+    if not success then
+        -- Fallback: sử dụng Stats service
+        pcall(function()
+            local memStats = Stats:FindFirstChild("MemoryStoreService")
+            if memStats then
+                memoryKB = memStats:GetValue() / 1024
             end
         end)
     end
-    ProfileConnections = {}
+    
+    return memoryKB
 end
 
--- Profile Anime (Blox Fruits, Anime Adventures...)
-local function ApplyAnimeProfile()
+-- Lấy thông tin chi tiết bộ nhớ
+function MemoryModule:GetDetailedMemoryInfo()
+    local info = {
+        TotalMemory = self:GetMemoryUsage(),
+        Instances = {
+            Parts = 0,
+            Scripts = 0,
+            Sounds = 0,
+            Particles = 0,
+            Other = 0
+        }
+    }
+    
+    -- Đếm số lượng Instances
+    local success = pcall(function()
+        for _, descendant in ipairs(game:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                info.Instances.Parts = info.Instances.Parts + 1
+            elseif descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+                info.Instances.Scripts = info.Instances.Scripts + 1
+            elseif descendant:IsA("Sound") then
+                info.Instances.Sounds = info.Instances.Sounds + 1
+            elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+                info.Instances.Particles = info.Instances.Particles + 1
+            else
+                info.Instances.Other = info.Instances.Other + 1
+            end
+        end
+    end)
+    
+    return info
+end
+
+-- Dọn rác thủ công
+function MemoryModule:CollectGarbage()
+    local beforeMemory = self:GetMemoryUsage()
+    
+    -- Force garbage collection
+    local success = pcall(function()
+        collectgarbage("collect")
+    end)
+    
+    -- Xóa Sounds đã phát xong
+    self:CleanupFinishedSounds()
+    
+    -- Xóa Particles đã hết lifetime
+    self:CleanupDeadParticles()
+    
+    -- Xóa Instances mồ côi
+    self:CleanupOrphanedInstances()
+    
+    -- Đợi một chút và collect lại
+    task.wait(0.1)
     pcall(function()
-        -- An Model quat khong lo o xa
-        for _, model in pairs(Workspace:GetDescendants()) do
-            if model:IsA("Model") then
-                local humanoid = model:FindFirstChildOfClass("Humanoid")
-                local primaryPart = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
-                
-                -- Neu la NPC/Enemy va o xa
-                if humanoid and primaryPart and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
-                    local distance = (primaryPart.Position - LP.Character.HumanoidRootPart.Position).Magnitude
+        collectgarbage("collect")
+    end)
+    
+    local afterMemory = self:GetMemoryUsage()
+    local freedMemory = math.max(0, beforeMemory - afterMemory)
+    
+    ConfigModule.State.MemoryFreed = ConfigModule.State.MemoryFreed + freedMemory
+    
+    if ConfigModule.Settings.DebugMode then
+        print(string.format("[AntiLagCore] Đã giải phóng %.2f KB bộ nhớ", freedMemory))
+    end
+    
+    return freedMemory
+end
+
+-- Dọn Sounds đã phát xong
+function MemoryModule:CleanupFinishedSounds()
+    local count = 0
+    
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("Sound") then
+            pcall(function()
+                if not descendant.IsPlaying and descendant.TimePosition >= descendant.TimeLength - 0.1 then
+                    -- Sound đã phát xong, giảm volume
+                    descendant.Volume = 0
+                    count = count + 1
+                end
+            end)
+        end
+    end
+    
+    return count
+end
+
+-- Dọn Particles đã chết
+function MemoryModule:CleanupDeadParticles()
+    local count = 0
+    
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("ParticleEmitter") then
+            pcall(function()
+                if not descendant.Enabled and descendant.Rate == 0 then
+                    descendant:Clear()
+                    count = count + 1
+                end
+            end)
+        end
+    end
+    
+    return count
+end
+
+-- Dọn Instances mồ côi
+function MemoryModule:CleanupOrphanedInstances()
+    local count = 0
+    
+    -- Tìm các Connection bị leak (không còn valid)
+    for category, connections in pairs(ConfigModule.State.ActiveConnections) do
+        local validConnections = {}
+        for _, conn in ipairs(connections) do
+            if typeof(conn) == "RBXScriptConnection" and conn.Connected then
+                table.insert(validConnections, conn)
+            else
+                count = count + 1
+            end
+        end
+        ConfigModule.State.ActiveConnections[category] = validConnections
+    end
+    
+    return count
+end
+
+-- Bật Auto Garbage Collection
+function MemoryModule:EnableAutoGC()
+    -- Cleanup connection cũ
+    UtilsModule:CleanupConnections("AutoGC")
+    
+    ConfigModule.Settings.AutoGarbageCollection = true
+    
+    -- Tạo connection mới
+    local lastGCTime = 0
+    local interval = ConfigModule.Settings.GCInterval
+    
+    local heartbeatConnection = RunService.Heartbeat:Connect(function()
+        local currentTime = tick()
+        if currentTime - lastGCTime >= interval then
+            lastGCTime = currentTime
+            task.defer(function()
+                self:CollectGarbage()
+            end)
+        end
+    end)
+    
+    UtilsModule:RegisterConnection(heartbeatConnection, "AutoGC")
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã bật Auto GC với interval " .. interval .. "s")
+    end
+end
+
+-- Tắt Auto Garbage Collection
+function MemoryModule:DisableAutoGC()
+    UtilsModule:CleanupConnections("AutoGC")
+    ConfigModule.Settings.AutoGarbageCollection = false
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã tắt Auto GC")
+    end
+end
+
+--============================================================================--
+--                         MODULE: GAME PROFILES                               --
+--  Cấu hình tối ưu cho từng loại game                                        --
+--============================================================================--
+
+local ProfileModule = {}
+
+-- Áp dụng Profile
+function ProfileModule:ApplyProfile(profileName)
+    local profile = ConfigModule.GameProfiles[profileName]
+    if not profile then
+        warn("[AntiLagCore] Không tìm thấy profile: " .. profileName)
+        return false
+    end
+    
+    -- Cleanup connections cũ
+    UtilsModule:CleanupConnections("Profile")
+    
+    ConfigModule.Settings.CurrentProfile = profileName
+    local settings = profile.Settings
+    
+    -- Áp dụng các cài đặt của profile
+    if settings.HideParticles then
+        self:HideAllParticles()
+    end
+    
+    if settings.HideTrails then
+        self:HideAllTrails()
+    end
+    
+    if settings.HideDecals then
+        self:HideAllDecals()
+    end
+    
+    if settings.HideTextures then
+        self:HideAllTextures()
+    end
+    
+    if settings.SimplifyMaterials then
+        OptimizeModule:SimplifyAllMaterials()
+    end
+    
+    if settings.HideDistantObjects then
+        self:EnableDistanceCulling(settings.DistanceThreshold)
+    end
+    
+    -- Profile-specific settings
+    if profileName == "Anime" then
+        self:ApplyAnimeProfileSettings(settings)
+    elseif profileName == "Tycoon" then
+        self:ApplyTycoonProfileSettings(settings)
+    elseif profileName == "Shooter" then
+        self:ApplyShooterProfileSettings(settings)
+    end
+    
+    -- Đăng ký Event để áp dụng cho Instances mới
+    local descendantConnection = Workspace.DescendantAdded:Connect(function(descendant)
+        task.defer(function()
+            self:ProcessNewInstanceForProfile(descendant, settings)
+        end)
+    end)
+    
+    UtilsModule:RegisterConnection(descendantConnection, "Profile")
+    
+    ConfigModule:SaveConfig()
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] Đã áp dụng profile: " .. profile.Name)
+    end
+    
+    return true
+end
+
+-- Ẩn tất cả Particles
+function ProfileModule:HideAllParticles()
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("ParticleEmitter") then
+            pcall(function()
+                descendant.Enabled = false
+            end)
+        end
+    end
+end
+
+-- Ẩn tất cả Trails
+function ProfileModule:HideAllTrails()
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("Trail") then
+            pcall(function()
+                descendant.Enabled = false
+            end)
+        end
+    end
+end
+
+-- Ẩn tất cả Decals
+function ProfileModule:HideAllDecals()
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("Decal") then
+            pcall(function()
+                descendant.Transparency = 1
+            end)
+        end
+    end
+end
+
+-- Ẩn tất cả Textures
+function ProfileModule:HideAllTextures()
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("Texture") then
+            pcall(function()
+                descendant.Transparency = 1
+            end)
+        end
+    end
+end
+
+-- Bật Distance Culling
+function ProfileModule:EnableDistanceCulling(threshold)
+    -- Cleanup connection cũ
+    UtilsModule:CleanupConnections("DistanceCulling")
+    
+    local hiddenParts = {}
+    
+    local heartbeatConnection = RunService.Heartbeat:Connect(function()
+        task.defer(function()
+            for _, descendant in ipairs(Workspace:GetDescendants()) do
+                if descendant:IsA("BasePart") then
+                    local distance = UtilsModule:GetDistanceFromPlayer(descendant)
                     
-                    -- An neu xa hon 200 studs va khong phai player
-                    if distance > 200 and not Players:GetPlayerFromCharacter(model) then
-                        for _, part in pairs(model:GetDescendants()) do
+                    if distance > threshold then
+                        if not hiddenParts[descendant] then
+                            hiddenParts[descendant] = descendant.Transparency
+                            pcall(function()
+                                descendant.Transparency = 1
+                            end)
+                        end
+                    else
+                        if hiddenParts[descendant] then
+                            pcall(function()
+                                descendant.Transparency = hiddenParts[descendant]
+                            end)
+                            hiddenParts[descendant] = nil
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+    
+    UtilsModule:RegisterConnection(heartbeatConnection, "DistanceCulling")
+end
+
+-- Settings đặc biệt cho Anime games
+function ProfileModule:ApplyAnimeProfileSettings(settings)
+    -- Ẩn NPCs lớn
+    if settings.HideLargeNPCs then
+        local threshold = settings.NPCSizeThreshold or 50
+        
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            if descendant:IsA("Model") and descendant:FindFirstChildOfClass("Humanoid") then
+                local size = UtilsModule:GetModelSize(descendant)
+                if size > threshold then
+                    pcall(function()
+                        for _, part in ipairs(descendant:GetDescendants()) do
                             if part:IsA("BasePart") then
-                                if not OriginalSettings.ModifiedParts[part] then
-                                    OriginalSettings.ModifiedParts[part] = {Transparency = part.Transparency}
-                                end
-                                part.LocalTransparencyModifier = 1
+                                part.Transparency = 0.9
                             end
                         end
-                    end
-                end
-            end
-        end
-        
-        -- An hieu ung chieu thuc (Skill Effects)
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Trail") then
-                local isCharacterEffect = false
-                if LP.Character then
-                    isCharacterEffect = obj:IsDescendantOf(LP.Character)
-                end
-                
-                -- An hieu ung khong phai cua player
-                if not isCharacterEffect and obj.Enabled then
-                    if obj:IsA("ParticleEmitter") then
-                        table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                    elseif obj:IsA("Beam") then
-                        table.insert(OriginalSettings.Beams, {Object = obj, Enabled = true})
-                    elseif obj:IsA("Trail") then
-                        table.insert(OriginalSettings.Trails, {Object = obj, Enabled = true})
-                    end
-                    obj.Enabled = false
-                end
-            end
-        end
-    end)
-    
-    print("[SunnyHubPro] Profile Anime - Da an hieu ung chieu thuc va Model xa")
-end
-
--- Profile Tycoon/Simulator
-local function ApplyTycoonProfile()
-    pcall(function()
-        -- An dong tien roi tren dat, Floating Text, Damage Indicator
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            -- An BillboardGui (thuong la Floating Text, Damage Indicator)
-            if obj:IsA("BillboardGui") then
-                if obj.Enabled ~= false then
-                    obj.Enabled = false
-                end
-            end
-            
-            -- An TextLabel noi (SurfaceGui)
-            if obj:IsA("SurfaceGui") then
-                obj.Enabled = false
-            end
-            
-            -- An Particles
-            if obj:IsA("ParticleEmitter") and obj.Enabled then
-                table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                obj.Enabled = false
-            end
-        end
-        
-        -- An cac Part nho (thuong la dong tien, item)
-        for _, part in pairs(Workspace:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local size = part.Size
-                -- Part nho hon 2 studs moi chieu va khong phai character
-                if size.X < 2 and size.Y < 2 and size.Z < 2 then
-                    local isCharacterPart = false
-                    if LP.Character then
-                        isCharacterPart = part:IsDescendantOf(LP.Character)
-                    end
-                    
-                    if not isCharacterPart then
-                        if not OriginalSettings.ModifiedParts[part] then
-                            OriginalSettings.ModifiedParts[part] = {Transparency = part.Transparency}
-                        end
-                        part.LocalTransparencyModifier = 0.9
-                    end
-                end
-            end
-        end
-    end)
-    
-    print("[SunnyHubPro] Profile Tycoon - Da an Floating Text, dong tien roi")
-end
-
--- Profile Shooter/FPS
-local function ApplyShooterProfile()
-    pcall(function()
-        -- Giu hien thi Player nhung toi uu moi truong
-        for _, part in pairs(Workspace:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local isCharacter = false
-                
-                -- Kiem tra xem co phai character cua player nao khong
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player.Character and part:IsDescendantOf(player.Character) then
-                        isCharacter = true
-                        break
-                    end
-                end
-                
-                -- Chi thay doi moi truong, giu nguyen player
-                if not isCharacter then
-                    if not OriginalSettings.ModifiedParts[part] then
-                        OriginalSettings.ModifiedParts[part] = {
-                            Material = part.Material,
-                            CastShadow = part.CastShadow,
-                            Reflectance = part.Reflectance
-                        }
-                    end
-                    part.Material = Enum.Material.SmoothPlastic
-                    part.CastShadow = false
-                    part.Reflectance = 0
-                end
-            end
-        end
-        
-        -- An Particles khong quan trong
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") then
-                -- Giu particle cua Player
-                local isPlayerParticle = false
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player.Character and obj:IsDescendantOf(player.Character) then
-                        isPlayerParticle = true
-                        break
-                    end
-                end
-                
-                if not isPlayerParticle and obj.Enabled then
-                    table.insert(OriginalSettings.Particles, {Object = obj, Enabled = true})
-                    obj.Enabled = false
-                end
-            end
-        end
-    end)
-    
-    print("[SunnyHubPro] Profile Shooter - Toi uu moi truong, giu nguyen Player")
-end
-
--- Ham ap dung Profile
-local function ApplyGameProfile(profileIndex)
-    -- Disconnect events cu
-    DisconnectProfileEvents()
-    
-    -- Khoi phuc truoc khi ap dung profile moi
-    if profileIndex == 0 then
-        RestoreAllSettings()
-        Config.GameProfile = 0
-        return
-    end
-    
-    Config.GameProfile = profileIndex
-    
-    if profileIndex == 1 then
-        ApplyAnimeProfile()
-    elseif profileIndex == 2 then
-        ApplyTycoonProfile()
-    elseif profileIndex == 3 then
-        ApplyShooterProfile()
-    end
-end
-
--- =================== QUAN LY BO NHO ===================
-local MemoryCleanupInfo = {
-    LastCleanupTime = 0,
-    CleanedCount = 0,
-}
-
--- Ham giai phong bo nho
-local function CleanupMemory()
-    local cleanedCount = 0
-    
-    pcall(function()
-        -- Xoa am thanh bi lap lai/da ket thuc
-        for _, sound in pairs(Workspace:GetDescendants()) do
-            if sound:IsA("Sound") then
-                if not sound.Playing and not sound.Looped then
-                    -- Khong xoa sound quan trong
-                    local isImportant = sound:IsDescendantOf(LP.Character) or 
-                                       sound:IsDescendantOf(PlayerGui)
-                    if not isImportant then
-                        -- Chi reset, khong destroy
-                        sound:Stop()
-                        cleanedCount = cleanedCount + 1
-                    end
-                end
-            end
-        end
-        
-        -- Xoa Particle da phat xong
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") then
-                if not obj.Enabled and obj.Parent then
-                    -- Kiem tra xem co particle nao dang hien khong
-                    local particleCount = 0
-                    pcall(function()
-                        -- Neu khong the dem particle, bo qua
                     end)
                 end
             end
         end
+    end
+    
+    -- Ẩn skill effects (tìm theo naming pattern)
+    if settings.HideSkillEffects then
+        local skillPatterns = {"skill", "effect", "attack", "ability", "aura", "vfx", "fx"}
         
-        -- Goi garbage collector
-        pcall(function()
-            collectgarbage("collect")
-        end)
-    end)
-    
-    MemoryCleanupInfo.LastCleanupTime = tick()
-    MemoryCleanupInfo.CleanedCount = cleanedCount
-    
-    return cleanedCount
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            local nameLower = descendant.Name:lower()
+            for _, pattern in ipairs(skillPatterns) do
+                if nameLower:find(pattern) then
+                    if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+                        pcall(function()
+                            descendant.Enabled = false
+                        end)
+                    end
+                    break
+                end
+            end
+        end
+    end
 end
 
--- Ham lay thong tin bo nho
-local function GetMemoryInfo()
-    local memoryKB = 0
-    pcall(function()
-        memoryKB = gcinfo()
-    end)
-    return memoryKB
+-- Settings đặc biệt cho Tycoon games
+function ProfileModule:ApplyTycoonProfileSettings(settings)
+    -- Ẩn floating text
+    if settings.HideFloatingText then
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            if descendant:IsA("BillboardGui") then
+                pcall(function()
+                    descendant.Enabled = false
+                end)
+            end
+        end
+    end
+    
+    -- Ẩn dropped items (tìm theo naming pattern)
+    if settings.HideDroppedItems then
+        local dropPatterns = {"drop", "coin", "money", "cash", "gem", "collect", "pickup"}
+        
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            local nameLower = descendant.Name:lower()
+            for _, pattern in ipairs(dropPatterns) do
+                if nameLower:find(pattern) then
+                    if descendant:IsA("BasePart") then
+                        pcall(function()
+                            descendant.Transparency = 1
+                        end)
+                    end
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Ẩn damage indicators
+    if settings.HideDamageIndicators then
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            if descendant:IsA("BillboardGui") then
+                local nameLower = descendant.Name:lower()
+                if nameLower:find("damage") or nameLower:find("hit") or nameLower:find("indicator") then
+                    pcall(function()
+                        descendant.Enabled = false
+                    end)
+                end
+            end
+        end
+    end
 end
 
--- =================== THEME ===================
-local Theme = {
-    BG       = Color3.fromRGB(18, 18, 22),
-    Panel    = Color3.fromRGB(26, 26, 32),
-    Panel2   = Color3.fromRGB(34, 34, 42),
-    Border   = Color3.fromRGB(50, 50, 60),
-    Text     = Color3.fromRGB(235, 235, 240),
-    SubText  = Color3.fromRGB(160, 160, 175),
-    Accent   = Color3.fromRGB(0, 220, 130),  -- neon green
-    Accent2  = Color3.fromRGB(0, 170, 255),  -- neon blue
-    Danger   = Color3.fromRGB(255, 70, 90),
-    Off      = Color3.fromRGB(70, 70, 80),
-    Warning  = Color3.fromRGB(255, 180, 50), -- vang cam
-    Success  = Color3.fromRGB(50, 205, 50),  -- xanh la
+-- Settings đặc biệt cho Shooter games
+function ProfileModule:ApplyShooterProfileSettings(settings)
+    -- Giữ Player visibility
+    if settings.KeepPlayerVisibility then
+        -- Không ẩn các Player characters
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character then
+                for _, part in ipairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.Transparency = 0
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Tối ưu môi trường
+    if settings.OptimizeEnvironment then
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                local nameLower = descendant.Name:lower()
+                -- Không tối ưu các parts liên quan đến player
+                if not nameLower:find("player") and not nameLower:find("character") then
+                    pcall(function()
+                        descendant.CastShadow = false
+                    end)
+                end
+            end
+        end
+    end
+    
+    -- Giảm muzzle flash
+    if settings.ReduceMuzzleFlash then
+        local muzzlePatterns = {"muzzle", "flash", "fire", "shoot", "gun"}
+        
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            local nameLower = descendant.Name:lower()
+            for _, pattern in ipairs(muzzlePatterns) do
+                if nameLower:find(pattern) then
+                    if descendant:IsA("ParticleEmitter") or descendant:IsA("PointLight") or descendant:IsA("SpotLight") then
+                        pcall(function()
+                            if descendant:IsA("ParticleEmitter") then
+                                descendant.Rate = math.min(descendant.Rate, 5)
+                            elseif descendant:IsA("PointLight") or descendant:IsA("SpotLight") then
+                                descendant.Brightness = descendant.Brightness * 0.3
+                            end
+                        end)
+                    end
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- Xử lý Instance mới theo Profile
+function ProfileModule:ProcessNewInstanceForProfile(instance, settings)
+    if not UtilsModule:IsValidInstance(instance) then return end
+    
+    if settings.HideParticles and instance:IsA("ParticleEmitter") then
+        pcall(function() instance.Enabled = false end)
+    end
+    
+    if settings.HideTrails and instance:IsA("Trail") then
+        pcall(function() instance.Enabled = false end)
+    end
+    
+    if settings.HideDecals and instance:IsA("Decal") then
+        pcall(function() instance.Transparency = 1 end)
+    end
+    
+    if settings.HideTextures and instance:IsA("Texture") then
+        pcall(function() instance.Transparency = 1 end)
+    end
+    
+    if settings.SimplifyMaterials and instance:IsA("BasePart") then
+        OptimizeModule:SimplifyPartMaterial(instance)
+    end
+end
+
+--============================================================================--
+--                              MODULE: UI                                     --
+--  Tạo giao diện người dùng mượt mà với Tween                                --
+--============================================================================--
+
+local UIModule = {}
+
+-- Theme colors
+UIModule.Theme = {
+    Background = Color3.fromRGB(15, 15, 20),
+    BackgroundSecondary = Color3.fromRGB(25, 25, 35),
+    BackgroundTertiary = Color3.fromRGB(35, 35, 50),
+    Accent = Color3.fromRGB(0, 200, 150),
+    AccentSecondary = Color3.fromRGB(0, 255, 200),
+    AccentDanger = Color3.fromRGB(255, 80, 80),
+    AccentWarning = Color3.fromRGB(255, 180, 50),
+    Text = Color3.fromRGB(240, 240, 245),
+    TextSecondary = Color3.fromRGB(150, 150, 165),
+    TextMuted = Color3.fromRGB(100, 100, 120),
+    Border = Color3.fromRGB(50, 50, 70),
+    Shadow = Color3.fromRGB(0, 0, 0)
 }
 
--- =================== HELPERS ===================
-local function corner(parent, r)
-    local c = Instance.new("UICorner", parent)
-    c.CornerRadius = UDim.new(0, r or 8)
-    return c
-end
+-- UI Elements cache
+UIModule.Elements = {}
 
-local function stroke(parent, color, t)
-    local s = Instance.new("UIStroke", parent)
-    s.Color = color or Theme.Border
-    s.Thickness = t or 1
-    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    return s
-end
-
-local function pad(parent, p)
-    local u = Instance.new("UIPadding", parent)
-    u.PaddingTop    = UDim.new(0, p)
-    u.PaddingBottom = UDim.new(0, p)
-    u.PaddingLeft   = UDim.new(0, p)
-    u.PaddingRight  = UDim.new(0, p)
-    return u
-end
-
-local function makeDraggable(frame, dragHandle)
-    dragHandle = dragHandle or frame
-    local dragging, dragInput, startPos, startMouse
+-- Tạo ScreenGui chính
+function UIModule:CreateMainUI()
+    -- Xóa UI cũ nếu có
+    self:DestroyUI()
     
-    local dragBeginConn = dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+    -- Tạo ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AntiLagCore_UI"
+    screenGui.DisplayOrder = 99999
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Parent vào CoreGui hoặc PlayerGui
+    local success = pcall(function()
+        screenGui.Parent = CoreGui
+    end)
+    
+    if not success then
+        screenGui.Parent = PlayerGui
+    end
+    
+    self.Elements.ScreenGui = screenGui
+    
+    -- Tạo Main Frame
+    self:CreateMainFrame()
+    
+    -- Tạo Mini Toolbar (khi minimize)
+    self:CreateMiniToolbar()
+    
+    -- Áp dụng minimize state nếu cần
+    if ConfigModule.Settings.MinimizeOnStart then
+        self:MinimizeUI()
+    end
+    
+    return screenGui
+end
+
+-- Tạo Main Frame
+function UIModule:CreateMainFrame()
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 380, 0, 520)
+    mainFrame.Position = UDim2.new(0.5, -190, 0.5, -260)
+    mainFrame.BackgroundColor3 = self.Theme.Background
+    mainFrame.BackgroundTransparency = ConfigModule.Settings.UITransparency
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ClipsDescendants = true
+    mainFrame.Parent = self.Elements.ScreenGui
+    
+    self.Elements.MainFrame = mainFrame
+    
+    -- Corner radius
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = mainFrame
+    
+    -- Border stroke
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = self.Theme.Border
+    stroke.Thickness = 1
+    stroke.Transparency = 0.5
+    stroke.Parent = mainFrame
+    
+    -- Drop shadow
+    local shadow = Instance.new("ImageLabel")
+    shadow.Name = "Shadow"
+    shadow.Size = UDim2.new(1, 40, 1, 40)
+    shadow.Position = UDim2.new(0, -20, 0, -20)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://5554236805"
+    shadow.ImageColor3 = self.Theme.Shadow
+    shadow.ImageTransparency = 0.6
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(23, 23, 277, 277)
+    shadow.ZIndex = -1
+    shadow.Parent = mainFrame
+    
+    -- Tạo Title Bar
+    self:CreateTitleBar()
+    
+    -- Tạo Tab Bar
+    self:CreateTabBar()
+    
+    -- Tạo Tab Contents
+    self:CreateTabContents()
+    
+    -- Tạo Status Bar
+    self:CreateStatusBar()
+end
+
+-- Tạo Title Bar
+function UIModule:CreateTitleBar()
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 45)
+    titleBar.Position = UDim2.new(0, 0, 0, 0)
+    titleBar.BackgroundColor3 = self.Theme.BackgroundSecondary
+    titleBar.BackgroundTransparency = 0.3
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = self.Elements.MainFrame
+    
+    self.Elements.TitleBar = titleBar
+    
+    -- Corner cho title bar (chỉ góc trên)
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = titleBar
+    
+    -- Bottom padding để che góc dưới
+    local bottomCover = Instance.new("Frame")
+    bottomCover.Name = "BottomCover"
+    bottomCover.Size = UDim2.new(1, 0, 0, 12)
+    bottomCover.Position = UDim2.new(0, 0, 1, -12)
+    bottomCover.BackgroundColor3 = self.Theme.BackgroundSecondary
+    bottomCover.BackgroundTransparency = 0.3
+    bottomCover.BorderSizePixel = 0
+    bottomCover.Parent = titleBar
+    
+    -- Icon
+    local icon = Instance.new("TextLabel")
+    icon.Name = "Icon"
+    icon.Size = UDim2.new(0, 30, 0, 30)
+    icon.Position = UDim2.new(0, 12, 0.5, -15)
+    icon.BackgroundTransparency = 1
+    icon.Font = Enum.Font.GothamBold
+    icon.Text = "⚡"
+    icon.TextColor3 = self.Theme.Accent
+    icon.TextSize = 20
+    icon.Parent = titleBar
+    
+    -- Title text
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(0, 200, 1, 0)
+    title.Position = UDim2.new(0, 45, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "ANTI-LAG CORE"
+    title.TextColor3 = self.Theme.Text
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = titleBar
+    
+    -- Version text
+    local version = Instance.new("TextLabel")
+    version.Name = "Version"
+    version.Size = UDim2.new(0, 50, 1, 0)
+    version.Position = UDim2.new(0, 170, 0, 0)
+    version.BackgroundTransparency = 1
+    version.Font = Enum.Font.Gotham
+    version.Text = "v3.0"
+    version.TextColor3 = self.Theme.TextMuted
+    version.TextSize = 11
+    version.TextXAlignment = Enum.TextXAlignment.Left
+    version.Parent = titleBar
+    
+    -- Minimize button
+    local minimizeBtn = Instance.new("TextButton")
+    minimizeBtn.Name = "MinimizeBtn"
+    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    minimizeBtn.Position = UDim2.new(1, -75, 0.5, -15)
+    minimizeBtn.BackgroundColor3 = self.Theme.BackgroundTertiary
+    minimizeBtn.BackgroundTransparency = 0.5
+    minimizeBtn.BorderSizePixel = 0
+    minimizeBtn.Font = Enum.Font.GothamBold
+    minimizeBtn.Text = "−"
+    minimizeBtn.TextColor3 = self.Theme.TextSecondary
+    minimizeBtn.TextSize = 18
+    minimizeBtn.AutoButtonColor = false
+    minimizeBtn.Parent = titleBar
+    
+    local minimizeBtnCorner = Instance.new("UICorner")
+    minimizeBtnCorner.CornerRadius = UDim.new(0, 6)
+    minimizeBtnCorner.Parent = minimizeBtn
+    
+    self.Elements.MinimizeBtn = minimizeBtn
+    
+    -- Close button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Name = "CloseBtn"
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -40, 0.5, -15)
+    closeBtn.BackgroundColor3 = self.Theme.AccentDanger
+    closeBtn.BackgroundTransparency = 0.7
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Text = "×"
+    closeBtn.TextColor3 = self.Theme.Text
+    closeBtn.TextSize = 18
+    closeBtn.AutoButtonColor = false
+    closeBtn.Parent = titleBar
+    
+    local closeBtnCorner = Instance.new("UICorner")
+    closeBtnCorner.CornerRadius = UDim.new(0, 6)
+    closeBtnCorner.Parent = closeBtn
+    
+    self.Elements.CloseBtn = closeBtn
+    
+    -- Setup drag functionality
+    self:SetupDragging(titleBar)
+    
+    -- Setup button events
+    self:SetupTitleBarEvents()
+end
+
+-- Setup Dragging
+function UIModule:SetupDragging(dragHandle)
+    local dragging = false
+    local dragInput
+    local dragStart
+    local startPos
+    
+    local function update(input)
+        local delta = input.Position - dragStart
+        local newPosition = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+        
+        -- Smooth tween to new position
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(self.Elements.MainFrame, tweenInfo, {Position = newPosition})
+        tween:Play()
+    end
+    
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            startMouse = input.Position
-            startPos = frame.Position
+            dragStart = input.Position
+            startPos = self.Elements.MainFrame.Position
+            
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
@@ -1005,1096 +1844,1361 @@ local function makeDraggable(frame, dragHandle)
             end)
         end
     end)
-    table.insert(AllConnections, dragBeginConn)
     
-    local dragChangeConn = dragHandle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
-    table.insert(AllConnections, dragChangeConn)
     
-    local inputChangeConn = UserInputService.InputChanged:Connect(function(input)
+    UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
-            local delta = input.Position - startMouse
-            frame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            update(input)
+        end
+    end)
+end
+
+-- Setup Title Bar Events
+function UIModule:SetupTitleBarEvents()
+    -- Minimize button hover
+    self.Elements.MinimizeBtn.MouseEnter:Connect(function()
+        local tween = TweenService:Create(self.Elements.MinimizeBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3,
+            TextColor3 = self.Theme.Text
+        })
+        tween:Play()
+    end)
+    
+    self.Elements.MinimizeBtn.MouseLeave:Connect(function()
+        local tween = TweenService:Create(self.Elements.MinimizeBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.5,
+            TextColor3 = self.Theme.TextSecondary
+        })
+        tween:Play()
+    end)
+    
+    self.Elements.MinimizeBtn.MouseButton1Click:Connect(function()
+        self:MinimizeUI()
+    end)
+    
+    -- Close button hover
+    self.Elements.CloseBtn.MouseEnter:Connect(function()
+        local tween = TweenService:Create(self.Elements.CloseBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3
+        })
+        tween:Play()
+    end)
+    
+    self.Elements.CloseBtn.MouseLeave:Connect(function()
+        local tween = TweenService:Create(self.Elements.CloseBtn, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.7
+        })
+        tween:Play()
+    end)
+    
+    self.Elements.CloseBtn.MouseButton1Click:Connect(function()
+        self:DestroyUI()
+    end)
+end
+
+-- Tạo Tab Bar
+function UIModule:CreateTabBar()
+    local tabBar = Instance.new("Frame")
+    tabBar.Name = "TabBar"
+    tabBar.Size = UDim2.new(1, -20, 0, 40)
+    tabBar.Position = UDim2.new(0, 10, 0, 50)
+    tabBar.BackgroundColor3 = self.Theme.BackgroundSecondary
+    tabBar.BackgroundTransparency = 0.5
+    tabBar.BorderSizePixel = 0
+    tabBar.Parent = self.Elements.MainFrame
+    
+    self.Elements.TabBar = tabBar
+    
+    local tabBarCorner = Instance.new("UICorner")
+    tabBarCorner.CornerRadius = UDim.new(0, 8)
+    tabBarCorner.Parent = tabBar
+    
+    -- Tab layout
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    tabLayout.Padding = UDim.new(0, 5)
+    tabLayout.Parent = tabBar
+    
+    -- Create tabs
+    local tabs = {
+        {Name = "LagReduction", Text = "Giảm Lag", Icon = "🔧"},
+        {Name = "Memory", Text = "Bộ Nhớ", Icon = "💾"},
+        {Name = "Profiles", Text = "Profiles", Icon = "🎮"}
+    }
+    
+    self.Elements.Tabs = {}
+    
+    for i, tabData in ipairs(tabs) do
+        local tab = Instance.new("TextButton")
+        tab.Name = tabData.Name .. "Tab"
+        tab.Size = UDim2.new(0, 110, 0, 32)
+        tab.BackgroundColor3 = i == 1 and self.Theme.Accent or self.Theme.BackgroundTertiary
+        tab.BackgroundTransparency = i == 1 and 0.3 or 0.7
+        tab.BorderSizePixel = 0
+        tab.Font = Enum.Font.GothamMedium
+        tab.Text = tabData.Icon .. " " .. tabData.Text
+        tab.TextColor3 = i == 1 and self.Theme.Text or self.Theme.TextSecondary
+        tab.TextSize = 12
+        tab.AutoButtonColor = false
+        tab.Parent = tabBar
+        
+        local tabCorner = Instance.new("UICorner")
+        tabCorner.CornerRadius = UDim.new(0, 6)
+        tabCorner.Parent = tab
+        
+        self.Elements.Tabs[tabData.Name] = tab
+        
+        -- Tab click event
+        tab.MouseButton1Click:Connect(function()
+            self:SwitchTab(tabData.Name)
+        end)
+        
+        -- Hover effects
+        tab.MouseEnter:Connect(function()
+            if ConfigModule.State.CurrentTab ~= tabData.Name then
+                local tween = TweenService:Create(tab, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.5
+                })
+                tween:Play()
+            end
+        end)
+        
+        tab.MouseLeave:Connect(function()
+            if ConfigModule.State.CurrentTab ~= tabData.Name then
+                local tween = TweenService:Create(tab, TweenInfo.new(0.2), {
+                    BackgroundTransparency = 0.7
+                })
+                tween:Play()
+            end
+        end)
+    end
+    
+    ConfigModule.State.CurrentTab = "LagReduction"
+end
+
+-- Tạo Tab Contents
+function UIModule:CreateTabContents()
+    local contentContainer = Instance.new("Frame")
+    contentContainer.Name = "ContentContainer"
+    contentContainer.Size = UDim2.new(1, -20, 1, -140)
+    contentContainer.Position = UDim2.new(0, 10, 0, 95)
+    contentContainer.BackgroundTransparency = 1
+    contentContainer.ClipsDescendants = true
+    contentContainer.Parent = self.Elements.MainFrame
+    
+    self.Elements.ContentContainer = contentContainer
+    
+    -- Tạo nội dung cho từng tab
+    self:CreateLagReductionTab()
+    self:CreateMemoryTab()
+    self:CreateProfilesTab()
+end
+
+-- Tạo Tab Giảm Lag
+function UIModule:CreateLagReductionTab()
+    local lagTab = Instance.new("ScrollingFrame")
+    lagTab.Name = "LagReductionContent"
+    lagTab.Size = UDim2.new(1, 0, 1, 0)
+    lagTab.Position = UDim2.new(0, 0, 0, 0)
+    lagTab.BackgroundTransparency = 1
+    lagTab.BorderSizePixel = 0
+    lagTab.ScrollBarThickness = 4
+    lagTab.ScrollBarImageColor3 = self.Theme.Accent
+    lagTab.ScrollBarImageTransparency = 0.5
+    lagTab.CanvasSize = UDim2.new(0, 0, 0, 400)
+    lagTab.Visible = true
+    lagTab.Parent = self.Elements.ContentContainer
+    
+    self.Elements.LagReductionContent = lagTab
+    
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.Padding = UDim.new(0, 10)
+    layout.Parent = lagTab
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 5)
+    padding.Parent = lagTab
+    
+    -- Chế độ 1: Giảm Lag Cơ Bản
+    self:CreateToggleCard(lagTab, {
+        Name = "BasicMode",
+        Title = "Chế Độ Cơ Bản",
+        Description = "Tắt bóng, giảm sương mù, khóa FPS",
+        Icon = "🔋",
+        Color = self.Theme.Accent,
+        OnToggle = function(enabled)
+            if enabled then
+                OptimizeModule:ApplyOptimizationMode(1)
+            else
+                OptimizeModule:ApplyOptimizationMode(0)
+            end
+        end
+    })
+    
+    -- Chế độ 2: Tối Ưu Nâng Cao
+    self:CreateToggleCard(lagTab, {
+        Name = "AdvancedMode",
+        Title = "Tối Ưu Nâng Cao",
+        Description = "Ẩn hiệu ứng, đơn giản hóa vật liệu",
+        Icon = "⚡",
+        Color = self.Theme.AccentWarning,
+        OnToggle = function(enabled)
+            if enabled then
+                OptimizeModule:ApplyOptimizationMode(2)
+            else
+                OptimizeModule:ApplyOptimizationMode(0)
+            end
+        end
+    })
+    
+    -- Chế độ 3: Siêu Tối Giản
+    self:CreateToggleCard(lagTab, {
+        Name = "ExtremeMode",
+        Title = "Siêu Tối Giản",
+        Description = "Xóa textures, particles, skybox",
+        Icon = "🔥",
+        Color = self.Theme.AccentDanger,
+        OnToggle = function(enabled)
+            if enabled then
+                OptimizeModule:ApplyOptimizationMode(3)
+            else
+                OptimizeModule:ApplyOptimizationMode(0)
+            end
+        end
+    })
+    
+    -- Black Screen Mode
+    self:CreateToggleCard(lagTab, {
+        Name = "BlackScreenMode",
+        Title = "Màn Hình Đen",
+        Description = "Tắt render 3D khi treo máy xuyên đêm",
+        Icon = "🌙",
+        Color = Color3.fromRGB(80, 80, 100),
+        IsDanger = true,
+        OnToggle = function(enabled)
+            if enabled then
+                OptimizeModule:EnableBlackScreen()
+            else
+                OptimizeModule:DisableBlackScreen()
+            end
+        end
+    })
+    
+    -- FPS Cap Slider
+    self:CreateSliderCard(lagTab, {
+        Name = "FPSCap",
+        Title = "Khóa FPS",
+        Description = "Giới hạn FPS để ổn định hiệu năng",
+        Icon = "📊",
+        Min = 15,
+        Max = 240,
+        Default = 60,
+        Step = 5,
+        OnChange = function(value)
+            ConfigModule.Settings.FPSCapValue = value
+            if ConfigModule.Settings.FPSCapEnabled then
+                OptimizeModule:SetFPSCap(value)
+            end
+        end,
+        OnToggle = function(enabled)
+            ConfigModule.Settings.FPSCapEnabled = enabled
+            if enabled then
+                OptimizeModule:SetFPSCap(ConfigModule.Settings.FPSCapValue)
+            else
+                OptimizeModule:RemoveFPSCap()
+            end
+        end
+    })
+end
+
+-- Tạo Tab Bộ Nhớ
+function UIModule:CreateMemoryTab()
+    local memoryTab = Instance.new("ScrollingFrame")
+    memoryTab.Name = "MemoryContent"
+    memoryTab.Size = UDim2.new(1, 0, 1, 0)
+    memoryTab.Position = UDim2.new(0, 0, 0, 0)
+    memoryTab.BackgroundTransparency = 1
+    memoryTab.BorderSizePixel = 0
+    memoryTab.ScrollBarThickness = 4
+    memoryTab.ScrollBarImageColor3 = self.Theme.Accent
+    memoryTab.ScrollBarImageTransparency = 0.5
+    memoryTab.CanvasSize = UDim2.new(0, 0, 0, 350)
+    memoryTab.Visible = false
+    memoryTab.Parent = self.Elements.ContentContainer
+    
+    self.Elements.MemoryContent = memoryTab
+    
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.Padding = UDim.new(0, 10)
+    layout.Parent = memoryTab
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 5)
+    padding.Parent = memoryTab
+    
+    -- Memory Usage Display
+    self:CreateMemoryDisplay(memoryTab)
+    
+    -- Auto GC Toggle
+    self:CreateToggleCard(memoryTab, {
+        Name = "AutoGC",
+        Title = "Tự Động Dọn Rác",
+        Description = "Tự động giải phóng bộ nhớ định kỳ",
+        Icon = "♻️",
+        Color = self.Theme.Accent,
+        OnToggle = function(enabled)
+            if enabled then
+                MemoryModule:EnableAutoGC()
+            else
+                MemoryModule:DisableAutoGC()
+            end
+        end
+    })
+    
+    -- Manual GC Button
+    self:CreateActionButton(memoryTab, {
+        Name = "ManualGC",
+        Title = "Dọn Rác Thủ Công",
+        Description = "Giải phóng bộ nhớ ngay lập tức",
+        Icon = "🗑️",
+        Color = self.Theme.AccentWarning,
+        OnClick = function()
+            local freed = MemoryModule:CollectGarbage()
+            -- Update UI với kết quả
+        end
+    })
+end
+
+-- Tạo Memory Display
+function UIModule:CreateMemoryDisplay(parent)
+    local displayCard = Instance.new("Frame")
+    displayCard.Name = "MemoryDisplay"
+    displayCard.Size = UDim2.new(1, -10, 0, 150)
+    displayCard.BackgroundColor3 = self.Theme.BackgroundSecondary
+    displayCard.BackgroundTransparency = 0.5
+    displayCard.BorderSizePixel = 0
+    displayCard.Parent = parent
+    
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 10)
+    cardCorner.Parent = displayCard
+    
+    -- Ring Progress (circular)
+    local ringContainer = Instance.new("Frame")
+    ringContainer.Name = "RingContainer"
+    ringContainer.Size = UDim2.new(0, 100, 0, 100)
+    ringContainer.Position = UDim2.new(0.5, -50, 0, 20)
+    ringContainer.BackgroundTransparency = 1
+    ringContainer.Parent = displayCard
+    
+    -- Background ring
+    local bgRing = Instance.new("ImageLabel")
+    bgRing.Name = "BackgroundRing"
+    bgRing.Size = UDim2.new(1, 0, 1, 0)
+    bgRing.BackgroundTransparency = 1
+    bgRing.Image = "rbxassetid://3570695787"
+    bgRing.ImageColor3 = self.Theme.BackgroundTertiary
+    bgRing.Parent = ringContainer
+    
+    -- Progress ring
+    local progressRing = Instance.new("ImageLabel")
+    progressRing.Name = "ProgressRing"
+    progressRing.Size = UDim2.new(1, 0, 1, 0)
+    progressRing.BackgroundTransparency = 1
+    progressRing.Image = "rbxassetid://3570695787"
+    progressRing.ImageColor3 = self.Theme.Accent
+    progressRing.Parent = ringContainer
+    
+    -- Center text
+    local centerText = Instance.new("TextLabel")
+    centerText.Name = "CenterText"
+    centerText.Size = UDim2.new(1, 0, 0, 30)
+    centerText.Position = UDim2.new(0, 0, 0.5, -15)
+    centerText.BackgroundTransparency = 1
+    centerText.Font = Enum.Font.GothamBold
+    centerText.Text = "0 KB"
+    centerText.TextColor3 = self.Theme.Text
+    centerText.TextSize = 16
+    centerText.Parent = ringContainer
+    
+    self.Elements.MemoryText = centerText
+    
+    -- Label
+    local memoryLabel = Instance.new("TextLabel")
+    memoryLabel.Name = "MemoryLabel"
+    memoryLabel.Size = UDim2.new(1, 0, 0, 20)
+    memoryLabel.Position = UDim2.new(0, 0, 1, -25)
+    memoryLabel.BackgroundTransparency = 1
+    memoryLabel.Font = Enum.Font.Gotham
+    memoryLabel.Text = "Bộ nhớ đang sử dụng"
+    memoryLabel.TextColor3 = self.Theme.TextSecondary
+    memoryLabel.TextSize = 11
+    memoryLabel.Parent = displayCard
+    
+    -- Setup real-time update
+    self:SetupMemoryUpdater()
+end
+
+-- Setup Memory Updater
+function UIModule:SetupMemoryUpdater()
+    local connection = RunService.Heartbeat:Connect(function()
+        if self.Elements.MemoryText then
+            local memoryKB = MemoryModule:GetMemoryUsage()
+            self.Elements.MemoryText.Text = UtilsModule:FormatBytes(memoryKB * 1024)
+        end
+    end)
+    
+    UtilsModule:RegisterConnection(connection, "UIMemoryUpdate")
+end
+
+-- Tạo Tab Profiles
+function UIModule:CreateProfilesTab()
+    local profilesTab = Instance.new("ScrollingFrame")
+    profilesTab.Name = "ProfilesContent"
+    profilesTab.Size = UDim2.new(1, 0, 1, 0)
+    profilesTab.Position = UDim2.new(0, 0, 0, 0)
+    profilesTab.BackgroundTransparency = 1
+    profilesTab.BorderSizePixel = 0
+    profilesTab.ScrollBarThickness = 4
+    profilesTab.ScrollBarImageColor3 = self.Theme.Accent
+    profilesTab.ScrollBarImageTransparency = 0.5
+    profilesTab.CanvasSize = UDim2.new(0, 0, 0, 320)
+    profilesTab.Visible = false
+    profilesTab.Parent = self.Elements.ContentContainer
+    
+    self.Elements.ProfilesContent = profilesTab
+    
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = profilesTab
+    
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 5)
+    padding.Parent = profilesTab
+    
+    -- Tạo radio buttons cho profiles
+    local profiles = {"Default", "Anime", "Tycoon", "Shooter"}
+    
+    self.Elements.ProfileRadios = {}
+    
+    for _, profileName in ipairs(profiles) do
+        local profile = ConfigModule.GameProfiles[profileName]
+        self:CreateProfileRadio(profilesTab, profileName, profile)
+    end
+end
+
+-- Tạo Profile Radio Button
+function UIModule:CreateProfileRadio(parent, profileName, profile)
+    local radioCard = Instance.new("TextButton")
+    radioCard.Name = profileName .. "Radio"
+    radioCard.Size = UDim2.new(1, -10, 0, 70)
+    radioCard.BackgroundColor3 = self.Theme.BackgroundSecondary
+    radioCard.BackgroundTransparency = 0.5
+    radioCard.BorderSizePixel = 0
+    radioCard.Text = ""
+    radioCard.AutoButtonColor = false
+    radioCard.Parent = parent
+    
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 10)
+    cardCorner.Parent = radioCard
+    
+    local cardStroke = Instance.new("UIStroke")
+    cardStroke.Color = ConfigModule.Settings.CurrentProfile == profileName and self.Theme.Accent or self.Theme.Border
+    cardStroke.Thickness = ConfigModule.Settings.CurrentProfile == profileName and 2 or 1
+    cardStroke.Transparency = 0.5
+    cardStroke.Parent = radioCard
+    
+    -- Radio indicator
+    local radioOuter = Instance.new("Frame")
+    radioOuter.Name = "RadioOuter"
+    radioOuter.Size = UDim2.new(0, 20, 0, 20)
+    radioOuter.Position = UDim2.new(0, 15, 0.5, -10)
+    radioOuter.BackgroundColor3 = self.Theme.BackgroundTertiary
+    radioOuter.BorderSizePixel = 0
+    radioOuter.Parent = radioCard
+    
+    local radioOuterCorner = Instance.new("UICorner")
+    radioOuterCorner.CornerRadius = UDim.new(1, 0)
+    radioOuterCorner.Parent = radioOuter
+    
+    local radioInner = Instance.new("Frame")
+    radioInner.Name = "RadioInner"
+    radioInner.Size = UDim2.new(0, 10, 0, 10)
+    radioInner.Position = UDim2.new(0.5, -5, 0.5, -5)
+    radioInner.BackgroundColor3 = self.Theme.Accent
+    radioInner.BackgroundTransparency = ConfigModule.Settings.CurrentProfile == profileName and 0 or 1
+    radioInner.BorderSizePixel = 0
+    radioInner.Parent = radioOuter
+    
+    local radioInnerCorner = Instance.new("UICorner")
+    radioInnerCorner.CornerRadius = UDim.new(1, 0)
+    radioInnerCorner.Parent = radioInner
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -60, 0, 20)
+    title.Position = UDim2.new(0, 45, 0, 12)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = profile.Name
+    title.TextColor3 = self.Theme.Text
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = radioCard
+    
+    -- Description
+    local desc = Instance.new("TextLabel")
+    desc.Name = "Description"
+    desc.Size = UDim2.new(1, -60, 0, 30)
+    desc.Position = UDim2.new(0, 45, 0, 32)
+    desc.BackgroundTransparency = 1
+    desc.Font = Enum.Font.Gotham
+    desc.Text = profile.Description
+    desc.TextColor3 = self.Theme.TextSecondary
+    desc.TextSize = 11
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.TextWrapped = true
+    desc.Parent = radioCard
+    
+    self.Elements.ProfileRadios[profileName] = {
+        Card = radioCard,
+        Stroke = cardStroke,
+        Inner = radioInner
+    }
+    
+    -- Click event
+    radioCard.MouseButton1Click:Connect(function()
+        self:SelectProfile(profileName)
+    end)
+    
+    -- Hover effects
+    radioCard.MouseEnter:Connect(function()
+        local tween = TweenService:Create(radioCard, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.3
+        })
+        tween:Play()
+    end)
+    
+    radioCard.MouseLeave:Connect(function()
+        local tween = TweenService:Create(radioCard, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.5
+        })
+        tween:Play()
+    end)
+end
+
+-- Select Profile
+function UIModule:SelectProfile(profileName)
+    -- Update all radios
+    for name, elements in pairs(self.Elements.ProfileRadios) do
+        local isSelected = name == profileName
+        
+        local strokeTween = TweenService:Create(elements.Stroke, TweenInfo.new(0.3), {
+            Color = isSelected and self.Theme.Accent or self.Theme.Border,
+            Thickness = isSelected and 2 or 1
+        })
+        strokeTween:Play()
+        
+        local innerTween = TweenService:Create(elements.Inner, TweenInfo.new(0.3), {
+            BackgroundTransparency = isSelected and 0 or 1
+        })
+        innerTween:Play()
+    end
+    
+    -- Apply profile
+    ProfileModule:ApplyProfile(profileName)
+end
+
+-- Tạo Toggle Card (card với switch)
+function UIModule:CreateToggleCard(parent, options)
+    local card = Instance.new("Frame")
+    card.Name = options.Name .. "Card"
+    card.Size = UDim2.new(1, -10, 0, 70)
+    card.BackgroundColor3 = self.Theme.BackgroundSecondary
+    card.BackgroundTransparency = 0.5
+    card.BorderSizePixel = 0
+    card.Parent = parent
+    
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 10)
+    cardCorner.Parent = card
+    
+    -- Glow effect (hidden by default)
+    local glow = Instance.new("UIStroke")
+    glow.Name = "Glow"
+    glow.Color = options.IsDanger and self.Theme.AccentDanger or options.Color
+    glow.Thickness = 0
+    glow.Transparency = 0.3
+    glow.Parent = card
+    
+    -- Icon
+    local icon = Instance.new("TextLabel")
+    icon.Name = "Icon"
+    icon.Size = UDim2.new(0, 35, 0, 35)
+    icon.Position = UDim2.new(0, 15, 0.5, -17)
+    icon.BackgroundColor3 = options.Color
+    icon.BackgroundTransparency = 0.8
+    icon.Font = Enum.Font.GothamBold
+    icon.Text = options.Icon
+    icon.TextColor3 = options.Color
+    icon.TextSize = 18
+    icon.Parent = card
+    
+    local iconCorner = Instance.new("UICorner")
+    iconCorner.CornerRadius = UDim.new(0, 8)
+    iconCorner.Parent = icon
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -120, 0, 20)
+    title.Position = UDim2.new(0, 60, 0, 15)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = options.Title
+    title.TextColor3 = self.Theme.Text
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = card
+    
+    -- Description
+    local desc = Instance.new("TextLabel")
+    desc.Name = "Description"
+    desc.Size = UDim2.new(1, -120, 0, 20)
+    desc.Position = UDim2.new(0, 60, 0, 38)
+    desc.BackgroundTransparency = 1
+    desc.Font = Enum.Font.Gotham
+    desc.Text = options.Description
+    desc.TextColor3 = self.Theme.TextSecondary
+    desc.TextSize = 11
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.Parent = card
+    
+    -- Toggle Switch
+    local toggleBg = Instance.new("TextButton")
+    toggleBg.Name = "ToggleBg"
+    toggleBg.Size = UDim2.new(0, 50, 0, 26)
+    toggleBg.Position = UDim2.new(1, -65, 0.5, -13)
+    toggleBg.BackgroundColor3 = self.Theme.BackgroundTertiary
+    toggleBg.BorderSizePixel = 0
+    toggleBg.Text = ""
+    toggleBg.AutoButtonColor = false
+    toggleBg.Parent = card
+    
+    local toggleBgCorner = Instance.new("UICorner")
+    toggleBgCorner.CornerRadius = UDim.new(1, 0)
+    toggleBgCorner.Parent = toggleBg
+    
+    local toggleKnob = Instance.new("Frame")
+    toggleKnob.Name = "Knob"
+    toggleKnob.Size = UDim2.new(0, 20, 0, 20)
+    toggleKnob.Position = UDim2.new(0, 3, 0.5, -10)
+    toggleKnob.BackgroundColor3 = self.Theme.Text
+    toggleKnob.BorderSizePixel = 0
+    toggleKnob.Parent = toggleBg
+    
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = toggleKnob
+    
+    -- Toggle state
+    local isEnabled = false
+    
+    local function updateToggle(enabled, animate)
+        isEnabled = enabled
+        
+        local duration = animate and 0.3 or 0
+        local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        local bgColor = enabled and (options.IsDanger and self.Theme.AccentDanger or options.Color) or self.Theme.BackgroundTertiary
+        local knobPos = enabled and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+        local glowThickness = enabled and 2 or 0
+        
+        local bgTween = TweenService:Create(toggleBg, tweenInfo, {BackgroundColor3 = bgColor})
+        local knobTween = TweenService:Create(toggleKnob, tweenInfo, {Position = knobPos})
+        local glowTween = TweenService:Create(glow, tweenInfo, {Thickness = glowThickness})
+        
+        bgTween:Play()
+        knobTween:Play()
+        glowTween:Play()
+    end
+    
+    toggleBg.MouseButton1Click:Connect(function()
+        updateToggle(not isEnabled, true)
+        if options.OnToggle then
+            options.OnToggle(isEnabled)
+        end
+    end)
+    
+    self.Elements[options.Name .. "Toggle"] = {
+        Update = updateToggle,
+        GetState = function() return isEnabled end
+    }
+end
+
+-- Tạo Slider Card
+function UIModule:CreateSliderCard(parent, options)
+    local card = Instance.new("Frame")
+    card.Name = options.Name .. "Card"
+    card.Size = UDim2.new(1, -10, 0, 90)
+    card.BackgroundColor3 = self.Theme.BackgroundSecondary
+    card.BackgroundTransparency = 0.5
+    card.BorderSizePixel = 0
+    card.Parent = parent
+    
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 10)
+    cardCorner.Parent = card
+    
+    -- Icon
+    local icon = Instance.new("TextLabel")
+    icon.Name = "Icon"
+    icon.Size = UDim2.new(0, 35, 0, 35)
+    icon.Position = UDim2.new(0, 15, 0, 12)
+    icon.BackgroundColor3 = self.Theme.Accent
+    icon.BackgroundTransparency = 0.8
+    icon.Font = Enum.Font.GothamBold
+    icon.Text = options.Icon
+    icon.TextColor3 = self.Theme.Accent
+    icon.TextSize = 18
+    icon.Parent = card
+    
+    local iconCorner = Instance.new("UICorner")
+    iconCorner.CornerRadius = UDim.new(0, 8)
+    iconCorner.Parent = icon
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -150, 0, 20)
+    title.Position = UDim2.new(0, 60, 0, 12)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = options.Title
+    title.TextColor3 = self.Theme.Text
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = card
+    
+    -- Value display
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Name = "Value"
+    valueLabel.Size = UDim2.new(0, 60, 0, 20)
+    valueLabel.Position = UDim2.new(1, -75, 0, 12)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.Text = tostring(options.Default) .. " FPS"
+    valueLabel.TextColor3 = self.Theme.Accent
+    valueLabel.TextSize = 12
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = card
+    
+    -- Slider track
+    local sliderTrack = Instance.new("Frame")
+    sliderTrack.Name = "Track"
+    sliderTrack.Size = UDim2.new(1, -30, 0, 6)
+    sliderTrack.Position = UDim2.new(0, 15, 0, 55)
+    sliderTrack.BackgroundColor3 = self.Theme.BackgroundTertiary
+    sliderTrack.BorderSizePixel = 0
+    sliderTrack.Parent = card
+    
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(1, 0)
+    trackCorner.Parent = sliderTrack
+    
+    -- Slider fill
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Name = "Fill"
+    sliderFill.Size = UDim2.new((options.Default - options.Min) / (options.Max - options.Min), 0, 1, 0)
+    sliderFill.BackgroundColor3 = self.Theme.Accent
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderTrack
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = sliderFill
+    
+    -- Slider knob
+    local sliderKnob = Instance.new("Frame")
+    sliderKnob.Name = "Knob"
+    sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    sliderKnob.Position = UDim2.new((options.Default - options.Min) / (options.Max - options.Min), -8, 0.5, -8)
+    sliderKnob.BackgroundColor3 = self.Theme.Text
+    sliderKnob.BorderSizePixel = 0
+    sliderKnob.Parent = sliderTrack
+    
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = sliderKnob
+    
+    -- Slider interaction
+    local currentValue = options.Default
+    local dragging = false
+    
+    local function updateSlider(input)
+        local trackAbsPos = sliderTrack.AbsolutePosition.X
+        local trackAbsSize = sliderTrack.AbsoluteSize.X
+        local mousePos = input.Position.X
+        
+        local percent = math.clamp((mousePos - trackAbsPos) / trackAbsSize, 0, 1)
+        local value = options.Min + (options.Max - options.Min) * percent
+        
+        -- Apply step
+        if options.Step then
+            value = math.floor(value / options.Step + 0.5) * options.Step
+        end
+        
+        value = math.clamp(value, options.Min, options.Max)
+        currentValue = value
+        
+        local fillPercent = (value - options.Min) / (options.Max - options.Min)
+        
+        sliderFill.Size = UDim2.new(fillPercent, 0, 1, 0)
+        sliderKnob.Position = UDim2.new(fillPercent, -8, 0.5, -8)
+        valueLabel.Text = tostring(math.floor(value)) .. " FPS"
+        
+        if options.OnChange then
+            options.OnChange(value)
+        end
+    end
+    
+    sliderTrack.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateSlider(input)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateSlider(input)
+        end
+    end)
+    
+    -- Toggle for enabling slider
+    local toggleBg = Instance.new("TextButton")
+    toggleBg.Name = "ToggleBg"
+    toggleBg.Size = UDim2.new(0, 40, 0, 20)
+    toggleBg.Position = UDim2.new(1, -55, 0, 55)
+    toggleBg.BackgroundColor3 = self.Theme.BackgroundTertiary
+    toggleBg.BorderSizePixel = 0
+    toggleBg.Text = ""
+    toggleBg.AutoButtonColor = false
+    toggleBg.Parent = card
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(1, 0)
+    toggleCorner.Parent = toggleBg
+    
+    local toggleKnob = Instance.new("Frame")
+    toggleKnob.Size = UDim2.new(0, 14, 0, 14)
+    toggleKnob.Position = UDim2.new(0, 3, 0.5, -7)
+    toggleKnob.BackgroundColor3 = self.Theme.Text
+    toggleKnob.BorderSizePixel = 0
+    toggleKnob.Parent = toggleBg
+    
+    local toggleKnobCorner = Instance.new("UICorner")
+    toggleKnobCorner.CornerRadius = UDim.new(1, 0)
+    toggleKnobCorner.Parent = toggleKnob
+    
+    local isEnabled = false
+    
+    toggleBg.MouseButton1Click:Connect(function()
+        isEnabled = not isEnabled
+        
+        local bgColor = isEnabled and self.Theme.Accent or self.Theme.BackgroundTertiary
+        local knobPos = isEnabled and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+        
+        TweenService:Create(toggleBg, TweenInfo.new(0.3), {BackgroundColor3 = bgColor}):Play()
+        TweenService:Create(toggleKnob, TweenInfo.new(0.3), {Position = knobPos}):Play()
+        
+        if options.OnToggle then
+            options.OnToggle(isEnabled)
+        end
+    end)
+end
+
+-- Tạo Action Button
+function UIModule:CreateActionButton(parent, options)
+    local button = Instance.new("TextButton")
+    button.Name = options.Name .. "Button"
+    button.Size = UDim2.new(1, -10, 0, 50)
+    button.BackgroundColor3 = options.Color
+    button.BackgroundTransparency = 0.7
+    button.BorderSizePixel = 0
+    button.Text = ""
+    button.AutoButtonColor = false
+    button.Parent = parent
+    
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 10)
+    buttonCorner.Parent = button
+    
+    local buttonStroke = Instance.new("UIStroke")
+    buttonStroke.Color = options.Color
+    buttonStroke.Thickness = 1
+    buttonStroke.Transparency = 0.5
+    buttonStroke.Parent = button
+    
+    -- Icon
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 30, 0, 30)
+    icon.Position = UDim2.new(0, 15, 0.5, -15)
+    icon.BackgroundTransparency = 1
+    icon.Font = Enum.Font.GothamBold
+    icon.Text = options.Icon
+    icon.TextColor3 = options.Color
+    icon.TextSize = 18
+    icon.Parent = button
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -60, 0, 20)
+    title.Position = UDim2.new(0, 50, 0, 8)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = options.Title
+    title.TextColor3 = self.Theme.Text
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = button
+    
+    -- Description
+    local desc = Instance.new("TextLabel")
+    desc.Size = UDim2.new(1, -60, 0, 15)
+    desc.Position = UDim2.new(0, 50, 0, 28)
+    desc.BackgroundTransparency = 1
+    desc.Font = Enum.Font.Gotham
+    desc.Text = options.Description
+    desc.TextColor3 = self.Theme.TextSecondary
+    desc.TextSize = 10
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.Parent = button
+    
+    -- Loading indicator
+    local loadingIcon = Instance.new("TextLabel")
+    loadingIcon.Name = "LoadingIcon"
+    loadingIcon.Size = UDim2.new(0, 20, 0, 20)
+    loadingIcon.Position = UDim2.new(1, -35, 0.5, -10)
+    loadingIcon.BackgroundTransparency = 1
+    loadingIcon.Font = Enum.Font.GothamBold
+    loadingIcon.Text = "⟳"
+    loadingIcon.TextColor3 = options.Color
+    loadingIcon.TextSize = 16
+    loadingIcon.Visible = false
+    loadingIcon.Parent = button
+    
+    local isProcessing = false
+    
+    button.MouseButton1Click:Connect(function()
+        if isProcessing then return end
+        
+        isProcessing = true
+        loadingIcon.Visible = true
+        
+        -- Spin animation
+        local spinTween = TweenService:Create(loadingIcon, TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), {
+            Rotation = 360
+        })
+        spinTween:Play()
+        
+        -- Execute action
+        task.spawn(function()
+            if options.OnClick then
+                options.OnClick()
+            end
+            
+            task.wait(0.5)
+            
+            spinTween:Cancel()
+            loadingIcon.Visible = false
+            loadingIcon.Rotation = 0
+            isProcessing = false
+        end)
+    end)
+    
+    -- Hover effects
+    button.MouseEnter:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2), {BackgroundTransparency = 0.5}):Play()
+    end)
+    
+    button.MouseLeave:Connect(function()
+        TweenService:Create(button, TweenInfo.new(0.2), {BackgroundTransparency = 0.7}):Play()
+    end)
+end
+
+-- Tạo Status Bar
+function UIModule:CreateStatusBar()
+    local statusBar = Instance.new("Frame")
+    statusBar.Name = "StatusBar"
+    statusBar.Size = UDim2.new(1, 0, 0, 35)
+    statusBar.Position = UDim2.new(0, 0, 1, -35)
+    statusBar.BackgroundColor3 = self.Theme.BackgroundSecondary
+    statusBar.BackgroundTransparency = 0.3
+    statusBar.BorderSizePixel = 0
+    statusBar.Parent = self.Elements.MainFrame
+    
+    -- Corner (bottom only)
+    local statusCorner = Instance.new("UICorner")
+    statusCorner.CornerRadius = UDim.new(0, 12)
+    statusCorner.Parent = statusBar
+    
+    local topCover = Instance.new("Frame")
+    topCover.Size = UDim2.new(1, 0, 0, 12)
+    topCover.Position = UDim2.new(0, 0, 0, 0)
+    topCover.BackgroundColor3 = self.Theme.BackgroundSecondary
+    topCover.BackgroundTransparency = 0.3
+    topCover.BorderSizePixel = 0
+    topCover.Parent = statusBar
+    
+    -- Status text
+    local statusText = Instance.new("TextLabel")
+    statusText.Name = "StatusText"
+    statusText.Size = UDim2.new(0.5, 0, 1, 0)
+    statusText.Position = UDim2.new(0, 15, 0, 0)
+    statusText.BackgroundTransparency = 1
+    statusText.Font = Enum.Font.Gotham
+    statusText.Text = "Sẵn sàng"
+    statusText.TextColor3 = self.Theme.Accent
+    statusText.TextSize = 11
+    statusText.TextXAlignment = Enum.TextXAlignment.Left
+    statusText.Parent = statusBar
+    
+    self.Elements.StatusText = statusText
+    
+    -- Stats text
+    local statsText = Instance.new("TextLabel")
+    statsText.Name = "StatsText"
+    statsText.Size = UDim2.new(0.5, -15, 1, 0)
+    statsText.Position = UDim2.new(0.5, 0, 0, 0)
+    statsText.BackgroundTransparency = 1
+    statsText.Font = Enum.Font.Gotham
+    statsText.Text = "Parts: 0 | Effects: 0"
+    statsText.TextColor3 = self.Theme.TextMuted
+    statsText.TextSize = 10
+    statsText.TextXAlignment = Enum.TextXAlignment.Right
+    statsText.Parent = statusBar
+    
+    self.Elements.StatsText = statsText
+    
+    -- Setup stats updater
+    self:SetupStatsUpdater()
+end
+
+-- Setup Stats Updater
+function UIModule:SetupStatsUpdater()
+    local connection = RunService.Heartbeat:Connect(function()
+        if self.Elements.StatsText then
+            self.Elements.StatsText.Text = string.format(
+                "Parts: %d | Effects: %d",
+                ConfigModule.State.PartsOptimized,
+                ConfigModule.State.EffectsRemoved
             )
         end
     end)
-    table.insert(AllConnections, inputChangeConn)
+    
+    UtilsModule:RegisterConnection(connection, "UIStatsUpdate")
 end
 
--- =================== ROOT GUI ===================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SunnyHubPro"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.IgnoreGuiInset = true
-local ok = pcall(function() ScreenGui.Parent = CoreGui end)
-if not ok then ScreenGui.Parent = PlayerGui end
-
--- ===== Nut mo / dong (floating) =====
-local OpenBtn = Instance.new("TextButton", ScreenGui)
-OpenBtn.Size = UDim2.new(0, 56, 0, 56)
-OpenBtn.Position = UDim2.new(0, 16, 0.4, 0)
-OpenBtn.BackgroundColor3 = Theme.Accent
-OpenBtn.Text = "S"
-OpenBtn.TextColor3 = Theme.BG
-OpenBtn.Font = Enum.Font.GothamBlack
-OpenBtn.TextSize = 26
-OpenBtn.AutoButtonColor = false
-OpenBtn.Visible = false
-corner(OpenBtn, 28)
-stroke(OpenBtn, Color3.fromRGB(0,255,170), 2)
-makeDraggable(OpenBtn)
-
--- ===== Cua so chinh =====
-local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 580, 0, 420)
-Main.Position = UDim2.new(0.5, -290, 0.5, -210)
-Main.BackgroundColor3 = Theme.BG
-Main.BorderSizePixel = 0
-Main.Visible = true
-Main.ClipsDescendants = false
-corner(Main, 14)
-stroke(Main, Theme.Border, 1)
-
--- Glow vien
-local Glow = Instance.new("UIStroke", Main)
-Glow.Color = Theme.Accent
-Glow.Thickness = 1
-Glow.Transparency = 0.6
-
--- Header
-local Header = Instance.new("Frame", Main)
-Header.Size = UDim2.new(1, 0, 0, 42)
-Header.BackgroundColor3 = Theme.Panel
-Header.BorderSizePixel = 0
-corner(Header, 14)
-local headerFix = Instance.new("Frame", Header)
-headerFix.Size = UDim2.new(1,0,0,14)
-headerFix.Position = UDim2.new(0,0,1,-14)
-headerFix.BackgroundColor3 = Theme.Panel
-headerFix.BorderSizePixel = 0
-makeDraggable(Main, Header)
-
-local Dot = Instance.new("Frame", Header)
-Dot.Size = UDim2.new(0, 10, 0, 10)
-Dot.Position = UDim2.new(0, 14, 0.5, -5)
-Dot.BackgroundColor3 = Theme.Accent
-Dot.BorderSizePixel = 0
-corner(Dot, 5)
-
-local Title = Instance.new("TextLabel", Header)
-Title.BackgroundTransparency = 1
-Title.Position = UDim2.new(0, 32, 0, 0)
-Title.Size = UDim2.new(1, -120, 1, 0)
-Title.Font = Enum.Font.GothamBold
-Title.Text = "SUNNY HUB PRO"
-Title.TextColor3 = Theme.Text
-Title.TextSize = 15
-Title.TextXAlignment = Enum.TextXAlignment.Left
-
-local Subtitle = Instance.new("TextLabel", Header)
-Subtitle.BackgroundTransparency = 1
-Subtitle.Position = UDim2.new(0, 32, 0, 18)
-Subtitle.Size = UDim2.new(1, -120, 0, 14)
-Subtitle.Font = Enum.Font.Gotham
-Subtitle.Text = "All-in-One v3.0 + Anti-Lag + Profiles"
-Subtitle.TextColor3 = Theme.SubText
-Subtitle.TextSize = 11
-Subtitle.TextXAlignment = Enum.TextXAlignment.Left
-
--- Nut Thu nho "-"
-local MinBtn = Instance.new("TextButton", Header)
-MinBtn.Size = UDim2.new(0, 28, 0, 28)
-MinBtn.Position = UDim2.new(1, -68, 0.5, -14)
-MinBtn.BackgroundColor3 = Theme.Panel2
-MinBtn.Text = "-"
-MinBtn.TextColor3 = Theme.Text
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.TextSize = 18
-MinBtn.AutoButtonColor = false
-corner(MinBtn, 6)
-
--- Nut Dong Script "X"
-local CloseBtn = Instance.new("TextButton", Header)
-CloseBtn.Size = UDim2.new(0, 28, 0, 28)
-CloseBtn.Position = UDim2.new(1, -34, 0.5, -14)
-CloseBtn.BackgroundColor3 = Theme.Danger
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Theme.Text
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 12
-CloseBtn.AutoButtonColor = false
-corner(CloseBtn, 6)
-
--- Sidebar
-local Sidebar = Instance.new("Frame", Main)
-Sidebar.Position = UDim2.new(0, 0, 0, 42)
-Sidebar.Size = UDim2.new(0, 130, 1, -42)
-Sidebar.BackgroundColor3 = Theme.Panel
-Sidebar.BorderSizePixel = 0
-
-local sbList = Instance.new("UIListLayout", Sidebar)
-sbList.Padding = UDim.new(0, 5)
-sbList.SortOrder = Enum.SortOrder.LayoutOrder
-pad(Sidebar, 8)
-
--- Content
-local Content = Instance.new("Frame", Main)
-Content.Position = UDim2.new(0, 130, 0, 42)
-Content.Size = UDim2.new(1, -130, 1, -42)
-Content.BackgroundTransparency = 1
-Content.ClipsDescendants = false
-
-local Pages = {}
-
-local function createPage(name)
-    local p = Instance.new("ScrollingFrame", Content)
-    p.Name = name
-    p.Size = UDim2.new(1, 0, 1, 0)
-    p.BackgroundTransparency = 1
-    p.BorderSizePixel = 0
-    p.ScrollBarThickness = 4
-    p.ScrollBarImageColor3 = Theme.Accent
-    p.CanvasSize = UDim2.new(0,0,0,0)
-    p.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    p.Visible = false
-    p.ClipsDescendants = false
-    local l = Instance.new("UIListLayout", p)
-    l.Padding = UDim.new(0, 10)
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    pad(p, 14)
-    Pages[name] = p
-    return p
-end
-
-local TabBtns = {}
-local function selectTab(name)
-    for n, page in pairs(Pages) do
-        page.Visible = (n == name)
-    end
-    for n, btn in pairs(TabBtns) do
-        if n == name then
-            btn.BackgroundColor3 = Theme.Accent
-            btn.TextColor3 = Theme.BG
-        else
-            btn.BackgroundColor3 = Theme.Panel2
-            btn.TextColor3 = Theme.Text
-        end
-    end
-end
-
-local function createTab(name, label, order)
-    local b = Instance.new("TextButton", Sidebar)
-    b.Size = UDim2.new(1, 0, 0, 32)
-    b.BackgroundColor3 = Theme.Panel2
-    b.Text = label
-    b.TextColor3 = Theme.Text
-    b.Font = Enum.Font.GothamSemibold
-    b.TextSize = 11
-    b.AutoButtonColor = false
-    b.LayoutOrder = order
-    corner(b, 8)
-    b.MouseButton1Click:Connect(function() selectTab(name) end)
-    TabBtns[name] = b
-    return b
-end
-
--- Tao cac Tab
-createTab("Shop",      "Shop",          1)
-createTab("AutoFarm",  "Auto Farm",     2)
-createTab("Crates",    "Crates",        3)
-createTab("LagReduce", "Giam Lag",      4)
-createTab("Memory",    "Quan Ly RAM",   5)
-createTab("Profiles",  "Profiles",      6)
-createTab("Misc",      "Misc",          7)
-
-createPage("Shop")
-createPage("AutoFarm")
-createPage("Crates")
-createPage("LagReduce")
-createPage("Memory")
-createPage("Profiles")
-createPage("Misc")
-selectTab("Shop")
-
--- =================== UI COMPONENTS ===================
-local function sectionLabel(parent, text, order)
-    local l = Instance.new("TextLabel", parent)
-    l.BackgroundTransparency = 1
-    l.Size = UDim2.new(1, 0, 0, 18)
-    l.Font = Enum.Font.GothamBold
-    l.Text = text
-    l.TextColor3 = Theme.SubText
-    l.TextSize = 12
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.LayoutOrder = order
-    return l
-end
-
-local function rowCard(parent, h, order)
-    local f = Instance.new("Frame", parent)
-    f.Size = UDim2.new(1, 0, 0, h or 50)
-    f.BackgroundColor3 = Theme.Panel
-    f.BorderSizePixel = 0
-    f.LayoutOrder = order
-    f.ClipsDescendants = false
-    corner(f, 10)
-    stroke(f, Theme.Border, 1)
-    pad(f, 12)
-    return f
-end
-
-local function createToggle(parent, text, default, order, onChange)
-    local row = rowCard(parent, 46, order)
-
-    local lbl = Instance.new("TextLabel", row)
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(1, -60, 1, 0)
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.Text = text
-    lbl.TextColor3 = Theme.Text
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local track = Instance.new("TextButton", row)
-    track.AnchorPoint = Vector2.new(1, 0.5)
-    track.Position = UDim2.new(1, 0, 0.5, 0)
-    track.Size = UDim2.new(0, 44, 0, 22)
-    track.BackgroundColor3 = Theme.Off
-    track.Text = ""
-    track.AutoButtonColor = false
-    corner(track, 11)
-
-    local knob = Instance.new("Frame", track)
-    knob.Size = UDim2.new(0, 18, 0, 18)
-    knob.Position = UDim2.new(0, 2, 0.5, -9)
-    knob.BackgroundColor3 = Theme.Text
-    knob.BorderSizePixel = 0
-    corner(knob, 9)
-
-    local state = default and true or false
-    local function render()
-        if state then
-            TweenService:Create(track,TweenInfo.new(0.15),{BackgroundColor3 = Theme.Accent}):Play()
-            TweenService:Create(knob, TweenInfo.new(0.15),{Position = UDim2.new(0, 24, 0.5, -9)}):Play()
-        else
-            TweenService:Create(track,TweenInfo.new(0.15),{BackgroundColor3 = Theme.Off}):Play()
-            TweenService:Create(knob, TweenInfo.new(0.15),{Position = UDim2.new(0, 2, 0.5, -9)}):Play()
-        end
-    end
-    render()
-
-    track.MouseButton1Click:Connect(function()
-        state = not state
-        render()
-        if onChange then onChange(state) end
+-- Tạo Mini Toolbar
+function UIModule:CreateMiniToolbar()
+    local miniToolbar = Instance.new("Frame")
+    miniToolbar.Name = "MiniToolbar"
+    miniToolbar.Size = UDim2.new(0, 60, 0, 60)
+    miniToolbar.Position = UDim2.new(0, 20, 0.5, -30)
+    miniToolbar.BackgroundColor3 = self.Theme.Background
+    miniToolbar.BackgroundTransparency = 0.2
+    miniToolbar.BorderSizePixel = 0
+    miniToolbar.Visible = false
+    miniToolbar.Parent = self.Elements.ScreenGui
+    
+    self.Elements.MiniToolbar = miniToolbar
+    
+    local miniCorner = Instance.new("UICorner")
+    miniCorner.CornerRadius = UDim.new(0, 12)
+    miniCorner.Parent = miniToolbar
+    
+    local miniStroke = Instance.new("UIStroke")
+    miniStroke.Color = self.Theme.Accent
+    miniStroke.Thickness = 2
+    miniStroke.Transparency = 0.3
+    miniStroke.Parent = miniToolbar
+    
+    -- Expand button
+    local expandBtn = Instance.new("TextButton")
+    expandBtn.Name = "ExpandBtn"
+    expandBtn.Size = UDim2.new(1, 0, 1, 0)
+    expandBtn.BackgroundTransparency = 1
+    expandBtn.Font = Enum.Font.GothamBold
+    expandBtn.Text = "⚡"
+    expandBtn.TextColor3 = self.Theme.Accent
+    expandBtn.TextSize = 28
+    expandBtn.AutoButtonColor = false
+    expandBtn.Parent = miniToolbar
+    
+    -- Pulse animation
+    local pulseIn = TweenService:Create(miniStroke, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Transparency = 0.7
+    })
+    
+    expandBtn.MouseButton1Click:Connect(function()
+        self:ExpandUI()
     end)
-
-    return {
-        Set = function(v) state = v and true or false; render() end,
-        Get = function() return state end,
-    }
+    
+    expandBtn.MouseEnter:Connect(function()
+        pulseIn:Pause()
+        TweenService:Create(miniStroke, TweenInfo.new(0.2), {Transparency = 0}):Play()
+        TweenService:Create(expandBtn, TweenInfo.new(0.2), {TextSize = 32}):Play()
+    end)
+    
+    expandBtn.MouseLeave:Connect(function()
+        pulseIn:Play()
+        TweenService:Create(expandBtn, TweenInfo.new(0.2), {TextSize = 28}):Play()
+    end)
+    
+    -- Store pulse tween reference
+    self.Elements.MiniPulse = pulseIn
+    
+    -- Setup mini toolbar dragging
+    self:SetupMiniDragging(miniToolbar)
 end
 
--- Slider voi TextBox nhap truc tiep
-local function createSlider(parent, text, min, max, default, step, order, onChange)
-    local row = rowCard(parent, 70, order)
-
-    local lbl = Instance.new("TextLabel", row)
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(0.5, 0, 0, 18)
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.Text = text
-    lbl.TextColor3 = Theme.Text
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    -- TextBox nhap truc tiep
-    local inputBox = Instance.new("TextBox", row)
-    inputBox.AnchorPoint = Vector2.new(1, 0)
-    inputBox.Position = UDim2.new(1, 0, 0, 0)
-    inputBox.Size = UDim2.new(0, 70, 0, 24)
-    inputBox.BackgroundColor3 = Theme.Panel2
-    inputBox.Font = Enum.Font.GothamBold
-    inputBox.TextColor3 = Theme.Accent
-    inputBox.TextSize = 13
-    inputBox.ClearTextOnFocus = false
-    if step and step >= 1 then
-        inputBox.Text = tostring(math.floor(default))
-    else
-        inputBox.Text = string.format("%.2f", default)
-    end
-    corner(inputBox, 6)
-    stroke(inputBox, Theme.Border, 1)
-
-    local bar = Instance.new("Frame", row)
-    bar.Position = UDim2.new(0, 0, 1, -14)
-    bar.AnchorPoint = Vector2.new(0, 1)
-    bar.Size = UDim2.new(1, 0, 0, 6)
-    bar.BackgroundColor3 = Theme.Off
-    bar.BorderSizePixel = 0
-    corner(bar, 3)
-
-    local fill = Instance.new("Frame", bar)
-    fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
-    fill.BackgroundColor3 = Theme.Accent
-    fill.BorderSizePixel = 0
-    corner(fill, 3)
-
-    local knob = Instance.new("TextButton", bar)
-    knob.AnchorPoint = Vector2.new(0.5, 0.5)
-    knob.Position = UDim2.new((default-min)/(max-min), 0, 0.5, 0)
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.BackgroundColor3 = Theme.Text
-    knob.Text = ""
-    knob.AutoButtonColor = false
-    corner(knob, 7)
-
-    local currentValue = default
+-- Setup Mini Toolbar Dragging
+function UIModule:SetupMiniDragging(toolbar)
     local dragging = false
-
-    local function updateUI(raw)
-        local pct = (raw-min)/(max-min)
-        fill.Size = UDim2.new(pct, 0, 1, 0)
-        knob.Position = UDim2.new(pct, 0, 0.5, 0)
-        if step and step >= 1 then
-            inputBox.Text = tostring(math.floor(raw))
-        else
-            inputBox.Text = string.format("%.2f", raw)
-        end
-    end
-
-    local function setFromX(x)
-        local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-        local raw = min + (max-min)*rel
-        if step then raw = math.floor(raw/step + 0.5)*step end
-        raw = math.clamp(raw, min, max)
-        currentValue = raw
-        updateUI(raw)
-        if onChange then onChange(raw) end
-    end
-
-    local function setFromText(txt)
-        local num = tonumber(txt)
-        if num then
-            if step then num = math.floor(num/step + 0.5)*step end
-            num = math.clamp(num, min, max)
-            currentValue = num
-            updateUI(num)
-            if onChange then onChange(num) end
-        else
-            updateUI(currentValue)
-        end
-    end
-
-    inputBox.FocusLost:Connect(function(enterPressed)
-        setFromText(inputBox.Text)
-    end)
-
-    knob.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            dragging=true
-        end
-    end)
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            dragging=true; setFromX(i.Position.X)
-        end
-    end)
+    local dragInput
+    local dragStart
+    local startPos
     
-    local inputChangeConn = UserInputService.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
-            setFromX(i.Position.X)
-        end
-    end)
-    table.insert(AllConnections, inputChangeConn)
-    
-    local inputEndConn = UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            dragging=false
-        end
-    end)
-    table.insert(AllConnections, inputEndConn)
-
-    return {
-        Set = function(v)
-            if step then v = math.floor(v/step + 0.5)*step end
-            v = math.clamp(v, min, max)
-            currentValue = v
-            updateUI(v)
-        end,
-        Get = function() return currentValue end,
-    }
-end
-
--- [FIX] Dropdown mo xuong duoi voi ScrollingFrame
-local ActiveDropdownList = nil
-
-local function createDropdown(parent, text, options, default, order, onChange)
-    local row = rowCard(parent, 46, order)
-    row.ClipsDescendants = false
-    row.ZIndex = 10
-
-    local lbl = Instance.new("TextLabel", row)
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(0.4, 0, 1, 0)
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.Text = text
-    lbl.TextColor3 = Theme.Text
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.ZIndex = 10
-
-    local btn = Instance.new("TextButton", row)
-    btn.AnchorPoint = Vector2.new(1, 0.5)
-    btn.Position = UDim2.new(1, 0, 0.5, 0)
-    btn.Size = UDim2.new(0.55, 0, 0, 30)
-    btn.BackgroundColor3 = Theme.Panel2
-    btn.Text = "  " .. tostring(default) .. "  v"
-    btn.TextColor3 = Theme.Text
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.AutoButtonColor = false
-    btn.ZIndex = 10
-    btn.TextTruncate = Enum.TextTruncate.AtEnd
-    corner(btn, 6)
-    stroke(btn, Theme.Border, 1)
-
-    -- ScrollingFrame dropdown - mo XUONG DUOI
-    local maxVisibleItems = 5
-    local itemHeight = 26
-    local listHeight = math.min(#options, maxVisibleItems) * (itemHeight + 2) + 8
-    
-    local list = Instance.new("ScrollingFrame", row)
-    list.AnchorPoint = Vector2.new(1, 0)
-    list.Position = UDim2.new(1, 0, 1, 4)
-    list.Size = UDim2.new(0.55, 0, 0, listHeight)
-    list.BackgroundColor3 = Theme.Panel2
-    list.BorderSizePixel = 0
-    list.Visible = false
-    list.ZIndex = 100
-    list.ScrollBarThickness = 3
-    list.ScrollBarImageColor3 = Theme.Accent
-    list.CanvasSize = UDim2.new(0, 0, 0, #options * (itemHeight + 2))
-    list.ClipsDescendants = true
-    corner(list, 6)
-    stroke(list, Theme.Accent, 1)
-
-    local ll = Instance.new("UIListLayout", list)
-    ll.Padding = UDim.new(0, 2)
-    pad(list, 4)
-
-    for idx, opt in ipairs(options) do
-        local o = Instance.new("TextButton", list)
-        o.Size = UDim2.new(1, -4, 0, itemHeight)
-        o.BackgroundColor3 = Theme.Panel
-        o.Text = opt
-        o.TextColor3 = Theme.Text
-        o.Font = Enum.Font.Gotham
-        o.TextSize = 11
-        o.AutoButtonColor = false
-        o.ZIndex = 101
-        o.TextTruncate = Enum.TextTruncate.AtEnd
-        corner(o, 4)
-        
-        o.MouseEnter:Connect(function()
-            o.BackgroundColor3 = Theme.Accent
-            o.TextColor3 = Theme.BG
-        end)
-        o.MouseLeave:Connect(function()
-            o.BackgroundColor3 = Theme.Panel
-            o.TextColor3 = Theme.Text
-        end)
-        
-        o.MouseButton1Click:Connect(function()
-            btn.Text = "  " .. opt .. "  v"
-            list.Visible = false
-            ActiveDropdownList = nil
-            if onChange then onChange(opt, idx) end
-        end)
+    local function update(input)
+        local delta = input.Position - dragStart
+        toolbar.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
     end
-
-    btn.MouseButton1Click:Connect(function()
-        if ActiveDropdownList and ActiveDropdownList ~= list then
-            ActiveDropdownList.Visible = false
-        end
-        list.Visible = not list.Visible
-        ActiveDropdownList = list.Visible and list or nil
-    end)
-
-    -- Dong dropdown khi click ra ngoai
-    local closeDropdownConn = UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            task.defer(function()
-                if list.Visible then
-                    local mousePos = UserInputService:GetMouseLocation()
-                    local listAbsPos = list.AbsolutePosition
-                    local listAbsSize = list.AbsoluteSize
-                    local btnAbsPos = btn.AbsolutePosition
-                    local btnAbsSize = btn.AbsoluteSize
-                    
-                    local inList = mousePos.X >= listAbsPos.X and mousePos.X <= listAbsPos.X + listAbsSize.X
-                                and mousePos.Y >= listAbsPos.Y and mousePos.Y <= listAbsPos.Y + listAbsSize.Y
-                    local inBtn = mousePos.X >= btnAbsPos.X and mousePos.X <= btnAbsPos.X + btnAbsSize.X
-                               and mousePos.Y >= btnAbsPos.Y and mousePos.Y <= btnAbsPos.Y + btnAbsSize.Y
-                    
-                    if not inList and not inBtn then
-                        list.Visible = false
-                        if ActiveDropdownList == list then
-                            ActiveDropdownList = nil
-                        end
-                    end
+    
+    toolbar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = toolbar.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
                 end
             end)
         end
     end)
-    table.insert(AllConnections, closeDropdownConn)
-end
-
-local function createButton(parent, text, color, order, onClick)
-    local b = Instance.new("TextButton", parent)
-    b.Size = UDim2.new(1, 0, 0, 38)
-    b.BackgroundColor3 = color or Theme.Accent
-    b.Text = text
-    b.TextColor3 = Theme.BG
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
-    b.AutoButtonColor = true
-    b.LayoutOrder = order
-    corner(b, 8)
-    b.MouseButton1Click:Connect(function()
-        if onClick then onClick() end
-    end)
-    return b
-end
-
-local function createTextInput(parent, text, default, order, onChange)
-    local row = rowCard(parent, 46, order)
-
-    local lbl = Instance.new("TextLabel", row)
-    lbl.BackgroundTransparency = 1
-    lbl.Size = UDim2.new(0.5, 0, 1, 0)
-    lbl.Font = Enum.Font.GothamSemibold
-    lbl.Text = text
-    lbl.TextColor3 = Theme.Text
-    lbl.TextSize = 13
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local box = Instance.new("TextBox", row)
-    box.AnchorPoint = Vector2.new(1, 0.5)
-    box.Position = UDim2.new(1, 0, 0.5, 0)
-    box.Size = UDim2.new(0.45, 0, 0, 30)
-    box.BackgroundColor3 = Theme.Panel2
-    box.Text = default
-    box.PlaceholderText = "Enter..."
-    box.TextColor3 = Theme.Text
-    box.Font = Enum.Font.GothamSemibold
-    box.TextSize = 12
-    box.ClearTextOnFocus = false
-    corner(box, 6)
-    stroke(box, Theme.Border, 1)
-
-    box.FocusLost:Connect(function()
-        if onChange then onChange(box.Text) end
-    end)
-end
-
--- =================== BUILD PAGES ===================
-
--- ===== SHOP =====
-sectionLabel(Pages.Shop, "REMOTE SHOP", 1)
-createDropdown(Pages.Shop, "Item", TotemList, Config.SelectedItem, 2, function(v)
-    Config.SelectedItem = v
-end)
-createButton(Pages.Shop, "BUY NOW", Theme.Accent2, 3, function()
-    pcall(function()
-        local shop = PlayerGui:FindFirstChild("TotemShopUI")
-        if not shop then return end
-        local sf = shop:FindFirstChild("Frame") and shop.Frame:FindFirstChild("ScrollingFrame")
-        if not sf then return end
-        local item = sf:FindFirstChild(Config.SelectedItem)
-        if item and item:FindFirstChild("BuyButton") then
-            local b = item.BuyButton
-            firesignal(b.MouseButton1Click)
-            firesignal(b.Activated)
-            for _, c in pairs(getconnections(b.MouseButton1Click)) do c:Fire() end
+    
+    toolbar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
         end
     end)
-end)
-createSlider(Pages.Shop, "Auto Buy Interval (s)", 1, 60, Config.BuyInterval, 1, 4, function(v)
-    Config.BuyInterval = v
-end)
-createToggle(Pages.Shop, "Auto Buy Selected Item", false, 5, function(v)
-    Config.AutoBuy = v
-end)
-
--- ===== AUTO FARM =====
-sectionLabel(Pages.AutoFarm, "AUTO PICKUP / HUT NHAT", 1)
-createSlider(Pages.AutoFarm, "Pickup Range (m)", 1, 100, Config.PickupRange, 1, 2, function(v)
-    Config.PickupRange = v
-end)
-createSlider(Pages.AutoFarm, "Scan Speed (s)", 0.05, 2, Config.ScanSpeed, 0.05, 3, function(v)
-    Config.ScanSpeed = v
-end)
-createToggle(Pages.AutoFarm, "Auto Pickup & Suck Items", false, 4, function(v)
-    Config.AutoPickup = v
-end)
-
--- ===== CRATES =====
-sectionLabel(Pages.Crates, "AUTO OPEN CRATES", 1)
-createSlider(Pages.Crates, "Open Speed (s)", 0.05, 2, Config.OpenSpeed, 0.05, 2, function(v)
-    Config.OpenSpeed = v
-end)
-createToggle(Pages.Crates, "Auto Open Crate", false, 3, function(v)
-    Config.AutoOpen = v
-end)
-createToggle(Pages.Crates, "Anti-Egg / Skip Animation", false, 4, function(v)
-    Config.AntiEgg = v
-end)
-createButton(Pages.Crates, "DESTROY CRATE UI (Anti-Lag)", Theme.Danger, 5, function()
-    pcall(function()
-        local g = PlayerGui:FindFirstChild("EggCrateOpeningUI")
-        if g then g:Destroy() end
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
     end)
-end)
+end
 
--- ===== GIAM LAG =====
-sectionLabel(Pages.LagReduce, "CAU HINH GIAM TAI", 1)
-
--- Trang thai hien tai
-local lagStatusRow = rowCard(Pages.LagReduce, 50, 2)
-local lagStatusLbl = Instance.new("TextLabel", lagStatusRow)
-lagStatusLbl.BackgroundTransparency = 1
-lagStatusLbl.Size = UDim2.new(1, 0, 1, 0)
-lagStatusLbl.Font = Enum.Font.GothamBold
-lagStatusLbl.Text = "Trang thai: TAT (Khoi phuc 100%)"
-lagStatusLbl.TextColor3 = Theme.Accent
-lagStatusLbl.TextSize = 14
-lagStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-createDropdown(Pages.LagReduce, "Che do", LagModeNames, "Tat (Khoi phuc 100%)", 3, function(v, idx)
-    ApplyLagMode(idx - 1)
+-- Switch Tab
+function UIModule:SwitchTab(tabName)
+    ConfigModule.State.CurrentTab = tabName
     
-    if Config.LagMode == 0 then
-        lagStatusLbl.Text = "Trang thai: TAT (Khoi phuc 100%)"
-        lagStatusLbl.TextColor3 = Theme.Accent
-    else
-        lagStatusLbl.Text = "Trang thai: " .. v
-        lagStatusLbl.TextColor3 = Theme.Warning
-    end
-end)
-
-sectionLabel(Pages.LagReduce, "MO TA CAC CHE DO", 4)
-
-local descRow = rowCard(Pages.LagReduce, 180, 5)
-local descLbl = Instance.new("TextLabel", descRow)
-descLbl.BackgroundTransparency = 1
-descLbl.Size = UDim2.new(1, 0, 1, 0)
-descLbl.Font = Enum.Font.Gotham
-descLbl.TextSize = 11
-descLbl.TextColor3 = Theme.SubText
-descLbl.TextWrapped = true
-descLbl.TextXAlignment = Enum.TextXAlignment.Left
-descLbl.TextYAlignment = Enum.TextYAlignment.Top
-descLbl.Text = [[CHE DO 1 - CO BAN:
-- Tat hieu ung do bong (GlobalShadows)
-- Giam suong mu (FogEnd)
-- Khoa FPS (neu executor ho tro)
-
-CHE DO 2 - NANG CAO:
-- + An Blur, SunRays, Bloom, Atmosphere
-- + Thay doi Material thanh SmoothPlastic
-- + Tat CastShadow, Particles, Fire, Smoke
-- + Tu dong toi uu Part moi xuat hien
-
-CHE DO 3 - SIEU TOI GIAN / TREO MAY:
-- + An Decal, Texture, Mesh Texture
-- + Man hinh den tiet kiem dien (CPU/GPU nghi 99%)
-- + Tat 3D Rendering (neu executor ho tro)
-
-LUU Y: Chuyen ve "Tat" se khoi phuc 100%!]]
-
-createButton(Pages.LagReduce, "KHOI PHUC 100% CAI DAT GOC", Theme.Accent, 6, function()
-    ApplyLagMode(0)
-    lagStatusLbl.Text = "Trang thai: TAT (Khoi phuc 100%)"
-    lagStatusLbl.TextColor3 = Theme.Accent
-end)
-
--- ===== QUAN LY BO NHO =====
-sectionLabel(Pages.Memory, "THONG TIN BO NHO", 1)
-
-local memRow = rowCard(Pages.Memory, 60, 2)
-local memLbl = Instance.new("TextLabel", memRow)
-memLbl.BackgroundTransparency = 1
-memLbl.Size = UDim2.new(1, 0, 1, 0)
-memLbl.Font = Enum.Font.GothamBold
-memLbl.TextSize = 14
-memLbl.TextColor3 = Theme.Accent
-memLbl.TextXAlignment = Enum.TextXAlignment.Left
-memLbl.Text = "RAM: Dang tai..."
-
--- Cap nhat RAM theo thoi gian thuc (Event-driven)
-local memoryUpdateConn = RunService.Heartbeat:Connect(function()
-    if not ScriptRunning then return end
-    
-    -- Chi cap nhat moi 1 giay de khong gay lag
-    if tick() % 1 < 0.03 then
-        local memKB = GetMemoryInfo()
-        local memMB = memKB / 1024
-        memLbl.Text = string.format("RAM dang dung: %.2f MB (%.0f KB)", memMB, memKB)
+    -- Update tab buttons
+    for name, tab in pairs(self.Elements.Tabs) do
+        local isActive = name == tabName
         
-        if memMB > 500 then
-            memLbl.TextColor3 = Theme.Danger
-        elseif memMB > 300 then
-            memLbl.TextColor3 = Theme.Warning
-        else
-            memLbl.TextColor3 = Theme.Accent
-        end
+        local bgTween = TweenService:Create(tab, TweenInfo.new(0.3), {
+            BackgroundColor3 = isActive and self.Theme.Accent or self.Theme.BackgroundTertiary,
+            BackgroundTransparency = isActive and 0.3 or 0.7
+        })
+        bgTween:Play()
+        
+        local textTween = TweenService:Create(tab, TweenInfo.new(0.3), {
+            TextColor3 = isActive and self.Theme.Text or self.Theme.TextSecondary
+        })
+        textTween:Play()
     end
-end)
-table.insert(AllConnections, memoryUpdateConn)
-
-sectionLabel(Pages.Memory, "GIAI PHONG BO NHO", 3)
-
-createButton(Pages.Memory, "DOC RAC THU CONG", Theme.Accent2, 4, function()
-    local count = CleanupMemory()
-    print("[SunnyHubPro] Da don dep " .. count .. " doi tuong. RAM: " .. GetMemoryInfo() .. " KB")
-end)
-
-local cleanupInfoRow = rowCard(Pages.Memory, 80, 5)
-local cleanupInfoLbl = Instance.new("TextLabel", cleanupInfoRow)
-cleanupInfoLbl.BackgroundTransparency = 1
-cleanupInfoLbl.Size = UDim2.new(1, 0, 1, 0)
-cleanupInfoLbl.Font = Enum.Font.Gotham
-cleanupInfoLbl.TextSize = 11
-cleanupInfoLbl.TextColor3 = Theme.SubText
-cleanupInfoLbl.TextWrapped = true
-cleanupInfoLbl.TextXAlignment = Enum.TextXAlignment.Left
-cleanupInfoLbl.TextYAlignment = Enum.TextYAlignment.Top
-cleanupInfoLbl.Text = [[Nut "Doc rac thu cong" se:
-- Dung am thanh khong can thiet
-- Goi Garbage Collector
-- Giai phong Nil Instances
-
-Khong anh huong den gameplay!]]
-
--- ===== PROFILES =====
-sectionLabel(Pages.Profiles, "PROFILE GAME", 1)
-
-local profileStatusRow = rowCard(Pages.Profiles, 50, 2)
-local profileStatusLbl = Instance.new("TextLabel", profileStatusRow)
-profileStatusLbl.BackgroundTransparency = 1
-profileStatusLbl.Size = UDim2.new(1, 0, 1, 0)
-profileStatusLbl.Font = Enum.Font.GothamBold
-profileStatusLbl.TextSize = 14
-profileStatusLbl.TextColor3 = Theme.Accent
-profileStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
-profileStatusLbl.Text = "Profile: Khong ap dung"
-
-createDropdown(Pages.Profiles, "Chon Profile", ProfileNames, "Khong ap dung", 3, function(v, idx)
-    ApplyGameProfile(idx - 1)
     
-    if Config.GameProfile == 0 then
-        profileStatusLbl.Text = "Profile: Khong ap dung"
-        profileStatusLbl.TextColor3 = Theme.Accent
-    else
-        profileStatusLbl.Text = "Profile: " .. v
-        profileStatusLbl.TextColor3 = Theme.Warning
-    end
-end)
-
-sectionLabel(Pages.Profiles, "MO TA PROFILES", 4)
-
-local profileDescRow = rowCard(Pages.Profiles, 150, 5)
-local profileDescLbl = Instance.new("TextLabel", profileDescRow)
-profileDescLbl.BackgroundTransparency = 1
-profileDescLbl.Size = UDim2.new(1, 0, 1, 0)
-profileDescLbl.Font = Enum.Font.Gotham
-profileDescLbl.TextSize = 11
-profileDescLbl.TextColor3 = Theme.SubText
-profileDescLbl.TextWrapped = true
-profileDescLbl.TextXAlignment = Enum.TextXAlignment.Left
-profileDescLbl.TextYAlignment = Enum.TextYAlignment.Top
-profileDescLbl.Text = [[PROFILE ANIME (Blox Fruits, Anime Adventures...):
-- An hieu ung chieu thuc (Skill Effects)
-- An Model quai/boss khong lo o xa (>200 studs)
-
-PROFILE TYCOON/SIMULATOR:
-- An dong tien roi, Floating Text, Damage Indicator
-- An cac vat pham nho tren mat dat
-
-PROFILE SHOOTER/FPS:
-- Giu nguyen hien thi Player
-- Toi uu moi truong xung quanh
-- An Particles khong quan trong
-
-LUU Y: Chuyen ve "Khong ap dung" se khoi phuc!]]
-
-createButton(Pages.Profiles, "KHOI PHUC PROFILE", Theme.Accent, 6, function()
-    ApplyGameProfile(0)
-    profileStatusLbl.Text = "Profile: Khong ap dung"
-    profileStatusLbl.TextColor3 = Theme.Accent
-end)
-
--- ===== MISC =====
-sectionLabel(Pages.Misc, "UTILITIES", 1)
-createToggle(Pages.Misc, "Anti-Unequip (Force Hold Tool)", false, 2, function(v)
-    Config.LockTool = v
-    if v then
-        local char = LP.Character
-        if char then
-            Config.LockedTool = char:FindFirstChildOfClass("Tool")
-                              or LP:FindFirstChild("Backpack") and LP.Backpack:FindFirstChildOfClass("Tool")
+    -- Show/hide content
+    local contents = {
+        LagReduction = self.Elements.LagReductionContent,
+        Memory = self.Elements.MemoryContent,
+        Profiles = self.Elements.ProfilesContent
+    }
+    
+    for name, content in pairs(contents) do
+        if content then
+            content.Visible = (name == tabName)
         end
-    else
-        Config.LockedTool = nil
     end
-end)
-createTextInput(Pages.Misc, "Toggle Menu Keybind", "RightControl", 3, function(text)
-    local code = Enum.KeyCode[text]
-    if code then Config.ToggleKey = code end
-end)
-createButton(Pages.Misc, "RE-LOCK CURRENT TOOL", Theme.Accent2, 4, function()
-    local char = LP.Character
-    if char then
-        Config.LockedTool = char:FindFirstChildOfClass("Tool")
-    end
-end)
-sectionLabel(Pages.Misc, "INFO", 5)
-local info = rowCard(Pages.Misc, 80, 6)
-local infoLbl = Instance.new("TextLabel", info)
-infoLbl.BackgroundTransparency = 1
-infoLbl.Size = UDim2.new(1,0,1,0)
-infoLbl.Font = Enum.Font.Gotham
-infoLbl.TextSize = 11
-infoLbl.TextColor3 = Theme.SubText
-infoLbl.TextWrapped = true
-infoLbl.TextXAlignment = Enum.TextXAlignment.Left
-infoLbl.TextYAlignment = Enum.TextYAlignment.Top
-infoLbl.Text = "User: "..LP.Name.."   |   UserId: "..LP.UserId
-    .."\n\nSunnyHubPro v3.0 - All-in-One Mod Menu"
-    .."\nEvent-Driven Architecture (Khong gay lag)"
-    .."\nDung firesignal + getconnections de bypass UI"
-
--- =================== TOGGLE OPEN/CLOSE ===================
-local Open = true
-
-local function minimize()
-    Open = false
-    Main.Visible = false
-    OpenBtn.Visible = true
-    OpenBtn.Text = "S"
 end
 
-local function maximize()
-    Open = true
-    Main.Visible = true
-    OpenBtn.Visible = false
+-- Minimize UI
+function UIModule:MinimizeUI()
+    ConfigModule.State.IsMinimized = true
+    
+    -- Animate main frame out
+    local hideTween = TweenService:Create(self.Elements.MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0)
+    })
+    
+    hideTween.Completed:Connect(function()
+        self.Elements.MainFrame.Visible = false
+        self.Elements.MiniToolbar.Visible = true
+        
+        -- Start pulse animation
+        if self.Elements.MiniPulse then
+            self.Elements.MiniPulse:Play()
+        end
+        
+        -- Animate mini toolbar in
+        self.Elements.MiniToolbar.Size = UDim2.new(0, 0, 0, 0)
+        TweenService:Create(self.Elements.MiniToolbar, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 60, 0, 60)
+        }):Play()
+    end)
+    
+    hideTween:Play()
 end
 
-local function closeScript()
-    ScriptRunning = false
-    Config.AutoBuy = false
-    Config.AutoPickup = false
-    Config.AutoOpen = false
-    Config.AntiEgg = false
-    Config.LockTool = false
+-- Expand UI
+function UIModule:ExpandUI()
+    ConfigModule.State.IsMinimized = false
     
-    -- Disconnect tat ca events
-    for _, conn in pairs(AllConnections) do
-        pcall(function()
-            if conn and conn.Connected then
-                conn:Disconnect()
-            end
-        end)
+    -- Stop pulse animation
+    if self.Elements.MiniPulse then
+        self.Elements.MiniPulse:Pause()
     end
-    AllConnections = {}
     
-    -- Disconnect Lag Reduction events
-    DisconnectLagReductionEvents()
+    -- Animate mini toolbar out
+    local hideTween = TweenService:Create(self.Elements.MiniToolbar, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0)
+    })
     
-    -- Disconnect Profile events
-    DisconnectProfileEvents()
-    
-    -- Khoi phuc giam lag truoc khi dong
-    RestoreAllSettings()
-    
-    pcall(function()
-        ScreenGui:Destroy()
+    hideTween.Completed:Connect(function()
+        self.Elements.MiniToolbar.Visible = false
+        self.Elements.MainFrame.Visible = true
+        
+        -- Animate main frame in
+        self.Elements.MainFrame.Size = UDim2.new(0, 0, 0, 0)
+        self.Elements.MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+        
+        TweenService:Create(self.Elements.MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 380, 0, 520),
+            Position = UDim2.new(0.5, -190, 0.5, -260)
+        }):Play()
     end)
     
-    print("[SunnyHubPro] Script closed by user. Da khoi phuc 100% cai dat goc.")
+    hideTween:Play()
 end
 
-OpenBtn.MouseButton1Click:Connect(function() 
-    maximize()
-end)
-
-MinBtn.MouseButton1Click:Connect(function() 
-    minimize()
-end)
-
-CloseBtn.MouseButton1Click:Connect(function() 
-    closeScript()
-end)
-
-local toggleKeyConn = UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if not ScriptRunning then return end
-    if input.KeyCode == Config.ToggleKey then
-        if Open then
-            minimize()
-        else
-            maximize()
-        end
-    end
-end)
-table.insert(AllConnections, toggleKeyConn)
-
--- =================== CORE LOGIC (Event-Driven) ===================
-
--- 1) AUTO BUY (Event-driven voi Heartbeat)
-local lastBuyTime = 0
-local autoBuyConn = RunService.Heartbeat:Connect(function()
-    if not ScriptRunning then return end
-    if not Config.AutoBuy then return end
+-- Destroy UI
+function UIModule:DestroyUI()
+    -- Cleanup all connections
+    UtilsModule:CleanupConnections()
     
-    local now = tick()
-    if now - lastBuyTime < Config.BuyInterval then return end
-    lastBuyTime = now
-    
-    pcall(function()
-        local shop = PlayerGui:FindFirstChild("TotemShopUI")
-        if not shop then return end
-        local sf = shop:FindFirstChild("Frame") and shop.Frame:FindFirstChild("ScrollingFrame")
-        if not sf then return end
-        local item = sf:FindFirstChild(Config.SelectedItem)
-        if item and item:FindFirstChild("BuyButton") then
-            local b = item.BuyButton
-            firesignal(b.MouseButton1Click)
-            firesignal(b.Activated)
-            for _, c in pairs(getconnections(b.MouseButton1Click)) do c:Fire() end
-        end
-    end)
-end)
-table.insert(AllConnections, autoBuyConn)
-
--- 2) AUTO OPEN CRATE (Event-driven)
-local function GetOpenCrateBtn()
-    local mainUi = PlayerGui:FindFirstChild("MainUi")
-    if mainUi then
-        return mainUi:FindFirstChild("OpenCrateButton", true)
+    -- Destroy screen gui
+    if self.Elements.ScreenGui then
+        self.Elements.ScreenGui:Destroy()
     end
-    return nil
+    
+    self.Elements = {}
+    
+    if ConfigModule.Settings.DebugMode then
+        print("[AntiLagCore] UI đã được đóng")
+    end
 end
 
-local lastOpenTime = 0
-local autoOpenConn = RunService.Heartbeat:Connect(function()
-    if not ScriptRunning then return end
-    if not Config.AutoOpen then return end
-    
-    local now = tick()
-    if now - lastOpenTime < Config.OpenSpeed then return end
-    lastOpenTime = now
-    
-    pcall(function()
-        local b = GetOpenCrateBtn()
-        if b then
-            firesignal(b.MouseButton1Click)
-            firesignal(b.MouseButton1Down)
-            firesignal(b.Activated)
-            for _, c in pairs(getconnections(b.MouseButton1Click)) do c:Fire() end
-        end
-    end)
-end)
-table.insert(AllConnections, autoOpenConn)
-
--- 3) AUTO PICKUP (Event-driven)
-local function GetDistance(prompt)
-    local char = LP.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return 9999 end
-    local part = prompt.Parent
-    if part and part:IsA("BasePart") then
-        return (char.HumanoidRootPart.Position - part.Position).Magnitude
+-- Update Status
+function UIModule:UpdateStatus(text, isError)
+    if self.Elements.StatusText then
+        self.Elements.StatusText.Text = text
+        self.Elements.StatusText.TextColor3 = isError and self.Theme.AccentDanger or self.Theme.Accent
     end
-    return 9999
 end
 
-local lastPickupTime = 0
-local autoPickupConn = RunService.Heartbeat:Connect(function()
-    if not ScriptRunning then return end
-    if not Config.AutoPickup then return end
-    
-    local now = tick()
-    if now - lastPickupTime < Config.ScanSpeed then return end
-    lastPickupTime = now
-    
-    pcall(function()
-        for _, obj in pairs(Workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") and obj.Enabled then
-                if GetDistance(obj) <= Config.PickupRange then
-                    fireproximityprompt(obj)
-                end
-            end
-        end
-    end)
-end)
-table.insert(AllConnections, autoPickupConn)
+--============================================================================--
+--                          MAIN INITIALIZATION                                --
+--============================================================================--
 
--- 4) LOCK TOOL (Event-driven)
-local lockToolConn = RunService.Stepped:Connect(function()
-    if not ScriptRunning then return end
-    if not Config.LockTool or not Config.LockedTool then return end
+local function Initialize()
+    -- Load config
+    ConfigModule:LoadConfig()
     
-    local char = LP.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum and Config.LockedTool.Parent ~= char then
-            pcall(function() hum:EquipTool(Config.LockedTool) end)
-        end
+    -- Cache lighting values
+    OptimizeModule:CacheLightingValues()
+    
+    -- Create UI
+    UIModule:CreateMainUI()
+    
+    -- Apply saved settings
+    if ConfigModule.Settings.LagReductionMode > 0 then
+        OptimizeModule:ApplyOptimizationMode(ConfigModule.Settings.LagReductionMode)
     end
-end)
-table.insert(AllConnections, lockToolConn)
-
--- 5) ANTI-EGG GUI (Event-driven)
-local antiEggConn = RunService.Heartbeat:Connect(function()
-    if not ScriptRunning then return end
-    if not Config.AntiEgg then return end
     
-    pcall(function()
-        local eggGui = PlayerGui:FindFirstChild("EggCrateOpeningUI")
-        if eggGui then
-            local skip = eggGui:FindFirstChild("SkipButton", true)
-            if skip then
-                firesignal(skip.MouseButton1Click)
-                firesignal(skip.Activated)
-            end
-            if eggGui.Enabled then eggGui.Enabled = false end
-            local frame = eggGui:FindFirstChild("Frame")
-            if frame then
-                frame.Visible = false
-                frame.Position = UDim2.new(5,0,5,0)
-            end
-        end
-    end)
-end)
-table.insert(AllConnections, antiEggConn)
+    if ConfigModule.Settings.AutoGarbageCollection then
+        MemoryModule:EnableAutoGC()
+    end
+    
+    if ConfigModule.Settings.CurrentProfile ~= "Default" then
+        ProfileModule:ApplyProfile(ConfigModule.Settings.CurrentProfile)
+    end
+    
+    print([[
+    ╔══════════════════════════════════════════════════════════════╗
+    ║              ANTI-LAG CORE v3.0 - ĐÃ KHỞI ĐỘNG               ║
+    ║                                                              ║
+    ║  Script tối ưu hóa hiệu năng Roblox                          ║
+    ║  Kiến trúc: Event-Driven (Không gây lag)                     ║
+    ║  Chức năng: Giảm lag, Dọn bộ nhớ, Game Profiles              ║
+    ║                                                              ║
+    ║  Sử dụng: Kéo thả giao diện để di chuyển                     ║
+    ║           Nhấn [-] để thu nhỏ, [×] để đóng                   ║
+    ╚══════════════════════════════════════════════════════════════╝
+    ]])
+    
+    UIModule:UpdateStatus("Đã khởi động thành công!")
+end
 
--- =================== READY ===================
-print("============================================================")
-print("[SunnyHubPro] Loaded successfully! Player:", LP.Name)
-print("[SunnyHubPro] Phien ban 3.0 - Event-Driven Architecture")
-print("============================================================")
-print("[SunnyHubPro] Nhan '"..Config.ToggleKey.Name.."' hoac click 'S' de toggle menu.")
-print("[SunnyHubPro] Click '-' de thu nho, 'X' de dong script hoan toan.")
-print("[SunnyHubPro] Tab 'Giam Lag' - 3 che do, khoi phuc 100% khi tat.")
-print("[SunnyHubPro] Tab 'Quan Ly RAM' - Hien thi RAM, doc rac thu cong.")
-print("[SunnyHubPro] Tab 'Profiles' - Profile rieng cho tung loai game.")
-print("============================================================")
+-- Run initialization
+Initialize()
+
+-- Export modules for external access (optional)
+return {
+    Config = ConfigModule,
+    Optimize = OptimizeModule,
+    Memory = MemoryModule,
+    Profile = ProfileModule,
+    UI = UIModule,
+    Utils = UtilsModule
+}
