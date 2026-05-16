@@ -1,0 +1,209 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LP = Players.LocalPlayer
+local PlayerGui = LP:WaitForChild("PlayerGui")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "InfinityBoosterV16"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 9999999
+ScreenGui.Parent = PlayerGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Parent = ScreenGui
+MainFrame.Size = UDim2.new(0, 220, 0, 180)
+MainFrame.Position = UDim2.new(0, 15, 0.4, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.Active = true
+MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame)
+
+local Title = Instance.new("TextLabel")
+Title.Parent = MainFrame
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.BackgroundTransparency = 1
+Title.Text = "🚀 TRUE BOOSTER V16"
+Title.TextColor3 = Color3.fromRGB(0, 200, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 12
+
+local ActionBtn = Instance.new("TextButton")
+ActionBtn.Parent = MainFrame
+ActionBtn.Size = UDim2.new(1, -20, 0, 50)
+ActionBtn.Position = UDim2.new(0, 10, 0, 50)
+ActionBtn.Text = "MODE: CHƠI BÌNH THƯỜNG"
+ActionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+ActionBtn.TextColor3 = Color3.new(1, 1, 1)
+ActionBtn.Font = Enum.Font.GothamBold
+ActionBtn.TextSize = 12
+Instance.new("UICorner", ActionBtn)
+
+local BoosterActive = false
+
+-- GIẢI QUYẾT MEMORY LEAK: Dùng Weak Table (__mode = "k")
+-- Khi quái bị Destroy(), reference trong bảng này tự động bốc hơi, nhường chỗ cho GC dọn RAM
+local HiddenStorage = setmetatable({}, {__mode = "k"}) 
+local Connections = {}
+
+-- GIẢI QUYẾT TASK SCHEDULER BLOAT: Một hàng đợi toàn cục duy nhất
+local WorkQueue = {}
+local WorkerConnection = nil
+
+-- Loại bỏ hoàn toàn pcall, check Class Name trực tiếp để tăng tốc execution
+local function hideVisual(d)
+    if d:IsA("BasePart") then
+        if HiddenStorage[d] == nil then
+            HiddenStorage[d] = {
+                LTM = d.LocalTransparencyModifier,
+                Shadow = d.CastShadow,
+                Material = d.Material
+            }
+        end
+        d.LocalTransparencyModifier = 1
+        d.CastShadow = false
+        d.Material = Enum.Material.SmoothPlastic
+    elseif d:IsA("BillboardGui") or d:IsA("SurfaceGui") or d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") then
+        if HiddenStorage[d] == nil then
+            HiddenStorage[d] = d.Enabled
+        end
+        d.Enabled = false
+    end
+end
+
+-- Worker duy nhất chạy ngầm: Mỗi frame chỉ nuốt đúng 100 object rồi nghỉ
+local function startWorker()
+    if WorkerConnection then return end
+    WorkerConnection = RunService.Heartbeat:Connect(function()
+        if not BoosterActive or #WorkQueue == 0 then return end
+        
+        local limit = 100
+        local processed = 0
+        
+        -- Lấy từ cuối bảng (O(1)) để tối ưu tốc độ mảng trong Lua
+        while #WorkQueue > 0 and processed < limit do
+            local obj = table.remove(WorkQueue, #WorkQueue)
+            -- An toàn: Dù đã queue nhưng object có thể bị game xóa ngay frame sau đó
+            if typeof(obj) == "Instance" and obj.Parent then
+                hideVisual(obj)
+            end
+            processed = processed + 1
+        end
+    end)
+end
+
+local function stopWorker()
+    if WorkerConnection then
+        WorkerConnection:Disconnect()
+        WorkerConnection = nil
+    end
+    table.clear(WorkQueue)
+end
+
+-- GetDescendants tốn kém, nhưng ta chỉ lấy danh sách đưa vào Queue, không xử lý Logic ngay lúc này
+local function queueDescendants(model)
+    if not model or not model:IsA("Model") then return end
+    for _, d in ipairs(model:GetDescendants()) do
+        table.insert(WorkQueue, d)
+    end
+end
+
+-- Khi vừa bật: Lùa toàn bộ map vào hàng đợi từ từ
+local function queueInitialState()
+    local zombies = workspace:FindFirstChild("Zombies")
+    local towers = workspace:FindFirstChild("Towers")
+    
+    if zombies then
+        for _, child in ipairs(zombies:GetChildren()) do
+            if child:IsA("Model") then queueDescendants(child) end
+        end
+    end
+    if towers then
+        for _, child in ipairs(towers:GetChildren()) do
+            if child:IsA("Model") then queueDescendants(child) end
+        end
+    end
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and string.match(obj.Name, "^%d+$") then
+            queueDescendants(obj)
+        end
+    end
+end
+
+local function applyBooster()
+    startWorker()
+    queueInitialState()
+
+    local zombies = workspace:FindFirstChild("Zombies")
+    local towers = workspace:FindFirstChild("Towers")
+
+    if zombies then
+        table.insert(Connections, zombies.ChildAdded:Connect(function(child)
+            if BoosterActive and child:IsA("Model") then queueDescendants(child) end
+        end))
+    end
+    if towers then
+        table.insert(Connections, towers.ChildAdded:Connect(function(child)
+            if BoosterActive and child:IsA("Model") then queueDescendants(child) end
+        end))
+    end
+    table.insert(Connections, workspace.ChildAdded:Connect(function(child)
+        if BoosterActive and child:IsA("Model") and string.match(child.Name, "^%d+$") then
+            queueDescendants(child)
+        end
+    end))
+end
+
+local function clearConnections()
+    for _, c in ipairs(Connections) do
+        c:Disconnect()
+    end
+    table.clear(Connections)
+end
+
+local function restoreAllBatched()
+    -- Khôi phục mượt mà: Đưa các object còn sống vào queue riêng để restore từ từ
+    local restoreQueue = {}
+    for inst, original in pairs(HiddenStorage) do
+        if typeof(inst) == "Instance" and inst.Parent then
+            table.insert(restoreQueue, {obj = inst, orig = original})
+        end
+    end
+    
+    -- Reset lại bảng weak ngay lập tức
+    HiddenStorage = setmetatable({}, {__mode = "k"})
+
+    task.spawn(function()
+        local count = 0
+        for _, item in ipairs(restoreQueue) do
+            local inst = item.obj
+            local original = item.orig
+            if inst and inst.Parent then
+                if inst:IsA("BasePart") then
+                    inst.LocalTransparencyModifier = original.LTM
+                    inst.CastShadow = original.Shadow
+                    inst.Material = original.Material
+                else
+                    inst.Enabled = original
+                end
+            end
+            count = count + 1
+            if count % 100 == 0 then task.wait() end
+        end
+    end)
+end
+
+ActionBtn.MouseButton1Click:Connect(function()
+    BoosterActive = not BoosterActive
+
+    if BoosterActive then
+        ActionBtn.Text = "TRUE BOOST: ON"
+        ActionBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        applyBooster()
+    else
+        ActionBtn.Text = "MODE: CHƠI BÌNH THƯỜNG"
+        ActionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+        clearConnections()
+        stopWorker()
+        restoreAllBatched()
+    end
+end)
