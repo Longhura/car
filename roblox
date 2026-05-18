@@ -1,25 +1,17 @@
 --[[
 ============================================================
-    SUNNY HUB PRO - All-in-One Mod Menu (Luau)
-    Gop 5 script: Mua / Mo / Giu / Hut (Nhat) / Xoa GUI
+    SUNNY HUB PRO V3 - All-in-One Mod Menu (Upgraded)
+    Nang cap tu V2: Lock Tool moi, Giam lag pickup/open,
+    Mo thung v2 (x2 lenh), UI tot hon
     Tac gia: Sunny Hub
 ------------------------------------------------------------
-    LUU Y FIX LOI (theo yeu cau):
-    1. File goc dung bien `tdgmapha25k` (ten player rieng).
-       Ban gop nay da dinh nghia lai bang LocalPlayer dong:
-          local LP = game.Players.LocalPlayer
-       => Chay duoc tren MOI tai khoan.
-    2. Cac nut Mua / Mo Thung KHONG dung MouseButton1Click
-       (vi game an su kien), ma phai dung:
-          - firesignal(btn.MouseButton1Click)
-          - firesignal(btn.Activated)
-          - getconnections(btn.MouseButton1Click) -> :Fire()
-       => Moi kich hoat duoc handler that cua game.
-    3. [FIX] Dropdown mo xuong duoi voi ScrollingFrame, ZIndex cao
-    4. [FIX] Nut X dong script hoan toan (destroy)
-    5. [FIX] Nut - thu nho thanh icon
-    6. [FIX] Them TextBox nhap truc tiep cho cac slider
-    7. [NEW] Them tab Giam Lag voi 5 cap do, co the khoi phuc 100%
+    CHANGELOG V3:
+    1. [FIX] Lock Tool - Logic moi: bao ve + day vat pham thua
+    2. [FIX] Auto Pickup - Dung cache DescendantAdded, khong spam GetDescendants
+    3. [FIX] Auto Open - Batch mo, x2 lenh, giam lag
+    4. [NEW] Mo thung V2 - Noi duoi nhau, x2 lenh goi
+    5. [FIX] UI dropdown khong de, ZIndex tot hon
+    6. [OPT] Giam GC pressure, toi uu vong lap
 ============================================================
 ]]
 
@@ -52,25 +44,26 @@ local Config = {
     -- Shop
     SelectedItem    = "Frostbound",
     AutoBuy         = false,
-    BuyInterval     = 10,   -- giay (se chinh trong UI)
+    BuyInterval     = 10,
 
     -- Auto Farm / Hut Nhat
     AutoPickup      = false,
-    PickupRange     = 15,   -- met
-    ScanSpeed       = 0.25, -- giay
+    PickupRange     = 15,
+    ScanSpeed       = 0.25,
 
     -- Crates
     AutoOpen        = false,
-    OpenSpeed       = 0.05, -- giay
+    OpenSpeed       = 0.05,
     AntiEgg         = false,
-
+    OpenV2Mode      = false, -- x2 lenh goi
+    
     -- Misc
     LockTool        = false,
     LockedTool      = nil,
     ToggleKey       = Enum.KeyCode.RightControl,
     
     -- Giam Lag
-    LagLevel        = 0, -- 0=Tat, 1-5 cac muc giam lag
+    LagLevel        = 0,
 }
 
 local TotemList = {
@@ -90,23 +83,16 @@ local LagLevelNames = {
 -- =================== LUU TRU CAI DAT GOC DE KHOI PHUC ===================
 local OriginalSettings = {
     Saved = false,
-    -- Lighting
     GlobalShadows = nil,
     FogEnd = nil,
     Brightness = nil,
     ClockTime = nil,
-    -- Terrain
     Terrain = {},
-    -- Parts (Material, CastShadow)
     ModifiedParts = {},
-    -- Particles
     Particles = {},
-    -- Sounds
     Sounds = {},
-    -- Decals/Textures
     Decals = {},
     Textures = {},
-    -- Beams/Trails
     Beams = {},
     Trails = {},
 }
@@ -116,13 +102,11 @@ local function SaveOriginalSettings()
     OriginalSettings.Saved = true
     
     pcall(function()
-        -- Save Lighting
         OriginalSettings.GlobalShadows = Lighting.GlobalShadows
         OriginalSettings.FogEnd = Lighting.FogEnd
         OriginalSettings.Brightness = Lighting.Brightness
         OriginalSettings.ClockTime = Lighting.ClockTime
         
-        -- Save Terrain
         local terrain = workspace:FindFirstChildOfClass("Terrain")
         if terrain then
             OriginalSettings.Terrain.WaterWaveSize = terrain.WaterWaveSize
@@ -137,7 +121,6 @@ local function RestoreAllSettings()
     if not OriginalSettings.Saved then return end
     
     pcall(function()
-        -- Restore Lighting
         if OriginalSettings.GlobalShadows ~= nil then
             Lighting.GlobalShadows = OriginalSettings.GlobalShadows
         end
@@ -148,7 +131,6 @@ local function RestoreAllSettings()
             Lighting.Brightness = OriginalSettings.Brightness
         end
         
-        -- Restore Terrain
         local terrain = workspace:FindFirstChildOfClass("Terrain")
         if terrain and OriginalSettings.Terrain.WaterWaveSize then
             terrain.WaterWaveSize = OriginalSettings.Terrain.WaterWaveSize
@@ -157,7 +139,6 @@ local function RestoreAllSettings()
             terrain.WaterTransparency = OriginalSettings.Terrain.WaterTransparency
         end
         
-        -- Restore Parts
         for part, data in pairs(OriginalSettings.ModifiedParts) do
             pcall(function()
                 if part and part.Parent then
@@ -168,7 +149,6 @@ local function RestoreAllSettings()
         end
         OriginalSettings.ModifiedParts = {}
         
-        -- Restore Particles
         for _, data in pairs(OriginalSettings.Particles) do
             pcall(function()
                 if data.Object and data.Object.Parent then
@@ -178,7 +158,6 @@ local function RestoreAllSettings()
         end
         OriginalSettings.Particles = {}
         
-        -- Restore Sounds
         for _, data in pairs(OriginalSettings.Sounds) do
             pcall(function()
                 if data.Object and data.Object.Parent then
@@ -188,7 +167,6 @@ local function RestoreAllSettings()
         end
         OriginalSettings.Sounds = {}
         
-        -- Restore Decals
         for _, data in pairs(OriginalSettings.Decals) do
             pcall(function()
                 if data.Object and data.Object.Parent then
@@ -198,7 +176,6 @@ local function RestoreAllSettings()
         end
         OriginalSettings.Decals = {}
         
-        -- Restore Textures
         for _, data in pairs(OriginalSettings.Textures) do
             pcall(function()
                 if data.Object and data.Object.Parent then
@@ -208,7 +185,6 @@ local function RestoreAllSettings()
         end
         OriginalSettings.Textures = {}
         
-        -- Restore Beams
         for _, data in pairs(OriginalSettings.Beams) do
             pcall(function()
                 if data.Object and data.Object.Parent then
@@ -218,7 +194,6 @@ local function RestoreAllSettings()
         end
         OriginalSettings.Beams = {}
         
-        -- Restore Trails
         for _, data in pairs(OriginalSettings.Trails) do
             pcall(function()
                 if data.Object and data.Object.Parent then
@@ -229,25 +204,22 @@ local function RestoreAllSettings()
         OriginalSettings.Trails = {}
     end)
     
-    print("[SunnyHubPro] Da khoi phuc 100% cai dat goc!")
+    print("[SunnyHubPro V3] Da khoi phuc 100% cai dat goc!")
 end
 
 local function ApplyLagReduction(level)
     SaveOriginalSettings()
     
-    -- Neu level = 0 thi khoi phuc
     if level == 0 then
         RestoreAllSettings()
         return
     end
     
     pcall(function()
-        -- ===== LEVEL 1: Co ban - Chi tat shadow =====
         if level >= 1 then
             Lighting.GlobalShadows = false
         end
         
-        -- ===== LEVEL 2: Trung binh - Giam nuoc, tat CastShadow =====
         if level >= 2 then
             local terrain = workspace:FindFirstChildOfClass("Terrain")
             if terrain then
@@ -266,7 +238,6 @@ local function ApplyLagReduction(level)
             end
         end
         
-        -- ===== LEVEL 3: Manh - Tat particle, fire, smoke, sparkles =====
         if level >= 3 then
             for _, obj in pairs(workspace:GetDescendants()) do
                 if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
@@ -277,7 +248,6 @@ local function ApplyLagReduction(level)
                 end
             end
             
-            -- Tat Beams va Trails
             for _, obj in pairs(workspace:GetDescendants()) do
                 if obj:IsA("Beam") and obj.Enabled then
                     table.insert(OriginalSettings.Beams, {Object = obj, Enabled = true})
@@ -289,7 +259,6 @@ local function ApplyLagReduction(level)
             end
         end
         
-        -- ===== LEVEL 4: Sieu manh - Giam material thanh SmoothPlastic, giam am thanh nen =====
         if level >= 4 then
             for _, part in pairs(workspace:GetDescendants()) do
                 if part:IsA("BasePart") and part.Material ~= Enum.Material.SmoothPlastic then
@@ -302,7 +271,6 @@ local function ApplyLagReduction(level)
                 end
             end
             
-            -- Giam am thanh nen (khong phai cua player)
             for _, sound in pairs(workspace:GetDescendants()) do
                 if sound:IsA("Sound") and sound.Playing then
                     local isPlayerSound = LP.Character and sound:IsDescendantOf(LP.Character)
@@ -314,7 +282,6 @@ local function ApplyLagReduction(level)
             end
         end
         
-        -- ===== LEVEL 5: Sieu sieu nhe - An decal/texture, tang fog =====
         if level >= 5 then
             Lighting.FogEnd = 400
             
@@ -330,7 +297,7 @@ local function ApplyLagReduction(level)
         end
     end)
     
-    print("[SunnyHubPro] Da ap dung giam lag muc " .. level .. ": " .. LagLevelNames[level + 1])
+    print("[SunnyHubPro V3] Da ap dung giam lag muc " .. level .. ": " .. LagLevelNames[level + 1])
 end
 
 -- =================== THEME ===================
@@ -341,11 +308,12 @@ local Theme = {
     Border   = Color3.fromRGB(50, 50, 60),
     Text     = Color3.fromRGB(235, 235, 240),
     SubText  = Color3.fromRGB(160, 160, 175),
-    Accent   = Color3.fromRGB(0, 220, 130),  -- neon green
-    Accent2  = Color3.fromRGB(0, 170, 255),  -- neon blue
+    Accent   = Color3.fromRGB(0, 220, 130),
+    Accent2  = Color3.fromRGB(0, 170, 255),
     Danger   = Color3.fromRGB(255, 70, 90),
     Off      = Color3.fromRGB(70, 70, 80),
-    Warning  = Color3.fromRGB(255, 180, 50), -- vang cam
+    Warning  = Color3.fromRGB(255, 180, 50),
+    Purple   = Color3.fromRGB(160, 100, 255), -- Mau moi cho V2 mode
 }
 
 -- =================== HELPERS ===================
@@ -424,15 +392,15 @@ OpenBtn.TextColor3 = Theme.BG
 OpenBtn.Font = Enum.Font.GothamBlack
 OpenBtn.TextSize = 26
 OpenBtn.AutoButtonColor = false
-OpenBtn.Visible = false -- An ban dau vi Main dang mo
+OpenBtn.Visible = false
 corner(OpenBtn, 28)
 stroke(OpenBtn, Color3.fromRGB(0,255,170), 2)
 makeDraggable(OpenBtn)
 
 -- ===== Cua so chinh =====
 local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 560, 0, 380)
-Main.Position = UDim2.new(0.5, -280, 0.5, -190)
+Main.Size = UDim2.new(0, 560, 0, 400)
+Main.Position = UDim2.new(0.5, -280, 0.5, -200)
 Main.BackgroundColor3 = Theme.BG
 Main.BorderSizePixel = 0
 Main.Visible = true
@@ -440,7 +408,6 @@ Main.ClipsDescendants = false
 corner(Main, 14)
 stroke(Main, Theme.Border, 1)
 
--- Glow vien
 local Glow = Instance.new("UIStroke", Main)
 Glow.Color = Theme.Accent
 Glow.Thickness = 1
@@ -471,7 +438,7 @@ Title.BackgroundTransparency = 1
 Title.Position = UDim2.new(0, 32, 0, 0)
 Title.Size = UDim2.new(1, -120, 1, 0)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "SUNNY HUB PRO"
+Title.Text = "SUNNY HUB PRO V3"
 Title.TextColor3 = Theme.Text
 Title.TextSize = 15
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -481,12 +448,11 @@ Subtitle.BackgroundTransparency = 1
 Subtitle.Position = UDim2.new(0, 32, 0, 18)
 Subtitle.Size = UDim2.new(1, -120, 0, 14)
 Subtitle.Font = Enum.Font.Gotham
-Subtitle.Text = "All-in-One v2.0 + Giam Lag"
+Subtitle.Text = "All-in-One v3.0 + Open V2 + Fix Lag"
 Subtitle.TextColor3 = Theme.SubText
 Subtitle.TextSize = 11
 Subtitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- Nut Thu nho "-"
 local MinBtn = Instance.new("TextButton", Header)
 MinBtn.Size = UDim2.new(0, 28, 0, 28)
 MinBtn.Position = UDim2.new(1, -68, 0.5, -14)
@@ -498,7 +464,6 @@ MinBtn.TextSize = 18
 MinBtn.AutoButtonColor = false
 corner(MinBtn, 6)
 
--- Nut Dong Script "X"
 local CloseBtn = Instance.new("TextButton", Header)
 CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 CloseBtn.Position = UDim2.new(1, -34, 0.5, -14)
@@ -675,7 +640,6 @@ local function createToggle(parent, text, default, order, onChange)
     }
 end
 
--- Slider voi TextBox nhap truc tiep
 local function createSlider(parent, text, min, max, default, step, order, onChange)
     local row = rowCard(parent, 70, order)
 
@@ -688,7 +652,6 @@ local function createSlider(parent, text, min, max, default, step, order, onChan
     lbl.TextSize = 13
     lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- TextBox nhap truc tiep
     local inputBox = Instance.new("TextBox", row)
     inputBox.AnchorPoint = Vector2.new(1, 0)
     inputBox.Position = UDim2.new(1, 0, 0, 0)
@@ -802,7 +765,6 @@ local function createSlider(parent, text, min, max, default, step, order, onChan
     }
 end
 
--- [FIX] Dropdown mo xuong duoi voi ScrollingFrame
 local ActiveDropdownList = nil
 
 local function createDropdown(parent, text, options, default, order, onChange)
@@ -835,14 +797,13 @@ local function createDropdown(parent, text, options, default, order, onChange)
     corner(btn, 6)
     stroke(btn, Theme.Border, 1)
 
-    -- ScrollingFrame dropdown - mo XUONG DUOI
     local maxVisibleItems = 5
     local itemHeight = 26
     local listHeight = math.min(#options, maxVisibleItems) * (itemHeight + 2) + 8
     
     local list = Instance.new("ScrollingFrame", row)
     list.AnchorPoint = Vector2.new(1, 0)
-    list.Position = UDim2.new(1, 0, 1, 4) -- Mo xuong duoi
+    list.Position = UDim2.new(1, 0, 1, 4)
     list.Size = UDim2.new(0.5, 0, 0, listHeight)
     list.BackgroundColor3 = Theme.Panel2
     list.BorderSizePixel = 0
@@ -896,7 +857,6 @@ local function createDropdown(parent, text, options, default, order, onChange)
         ActiveDropdownList = list.Visible and list or nil
     end)
 
-    -- Dong dropdown khi click ra ngoai
     UserInput.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             task.defer(function()
@@ -979,13 +939,23 @@ sectionLabel(Pages.Shop, "REMOTE SHOP", 1)
 createDropdown(Pages.Shop, "Item", TotemList, Config.SelectedItem, 2, function(v)
     Config.SelectedItem = v
 end)
+
+-- Cache shop UI path
+local _shopCache = nil
+local function GetShopItem(name)
+    if not _shopCache or not _shopCache.Parent then
+        local shop = PlayerGui:FindFirstChild("TotemShopUI")
+        if shop then
+            local sf = shop:FindFirstChild("Frame") and shop.Frame:FindFirstChild("ScrollingFrame")
+            _shopCache = sf
+        end
+    end
+    return _shopCache and _shopCache:FindFirstChild(name)
+end
+
 createButton(Pages.Shop, "BUY NOW", Theme.Accent2, 3, function()
     pcall(function()
-        local shop = PlayerGui:FindFirstChild("TotemShopUI")
-        if not shop then return end
-        local sf = shop:FindFirstChild("Frame") and shop.Frame:FindFirstChild("ScrollingFrame")
-        if not sf then return end
-        local item = sf:FindFirstChild(Config.SelectedItem)
+        local item = GetShopItem(Config.SelectedItem)
         if item and item:FindFirstChild("BuyButton") then
             local b = item.BuyButton
             firesignal(b.MouseButton1Click)
@@ -1001,30 +971,51 @@ createToggle(Pages.Shop, "Auto Buy Selected Item", false, 5, function(v)
     Config.AutoBuy = v
 end)
 
--- ===== AUTO FARM =====
-sectionLabel(Pages.AutoFarm, "AUTO PICKUP / HUT NHAT", 1)
+-- ===== AUTO FARM (TOI UU) =====
+sectionLabel(Pages.AutoFarm, "AUTO PICKUP / HUT NHAT (V3 - TOI UU)", 1)
 createSlider(Pages.AutoFarm, "Pickup Range (m)", 1, 100, Config.PickupRange, 1, 2, function(v)
     Config.PickupRange = v
 end)
-createSlider(Pages.AutoFarm, "Scan Speed (s)", 0.05, 2, Config.ScanSpeed, 0.05, 3, function(v)
+createSlider(Pages.AutoFarm, "Scan Speed (s)", 0.1, 2, Config.ScanSpeed, 0.05, 3, function(v)
     Config.ScanSpeed = v
 end)
 createToggle(Pages.AutoFarm, "Auto Pickup & Suck Items", false, 4, function(v)
     Config.AutoPickup = v
 end)
 
--- ===== CRATES =====
-sectionLabel(Pages.Crates, "AUTO OPEN CRATES", 1)
-createSlider(Pages.Crates, "Open Speed (s)", 0.05, 2, Config.OpenSpeed, 0.05, 2, function(v)
+-- ===== CRATES (MOI - V2 MODE) =====
+sectionLabel(Pages.Crates, "AUTO OPEN CRATES (V3)", 1)
+createSlider(Pages.Crates, "Open Speed (s)", 0.02, 2, Config.OpenSpeed, 0.02, 2, function(v)
     Config.OpenSpeed = v
 end)
 createToggle(Pages.Crates, "Auto Open Crate", false, 3, function(v)
     Config.AutoOpen = v
 end)
-createToggle(Pages.Crates, "Anti-Egg / Skip Animation", false, 4, function(v)
+
+-- NEW: V2 Mode - x2 lenh goi
+sectionLabel(Pages.Crates, "MO THUNG V2 (NOI DUOI, x2 LENH)", 4)
+createToggle(Pages.Crates, "V2 Mode - x2 Lenh Mo Nhanh", false, 5, function(v)
+    Config.OpenV2Mode = v
+end)
+
+local v2Desc = rowCard(Pages.Crates, 60, 6)
+local v2DescLbl = Instance.new("TextLabel", v2Desc)
+v2DescLbl.BackgroundTransparency = 1
+v2DescLbl.Size = UDim2.new(1, 0, 1, 0)
+v2DescLbl.Font = Enum.Font.Gotham
+v2DescLbl.TextSize = 11
+v2DescLbl.TextColor3 = Theme.SubText
+v2DescLbl.TextWrapped = true
+v2DescLbl.TextXAlignment = Enum.TextXAlignment.Left
+v2DescLbl.TextYAlignment = Enum.TextYAlignment.Top
+v2DescLbl.Text = [[V2 Mode: Goi x2 lenh mo lien tiep moi vong, noi duoi nhau khong cho server phan hoi.
+LUU Y: Co the bi rate limit tuy game!]]
+
+sectionLabel(Pages.Crates, "ANTI-EGG / SKIP", 7)
+createToggle(Pages.Crates, "Anti-Egg / Skip Animation", false, 8, function(v)
     Config.AntiEgg = v
 end)
-createButton(Pages.Crates, "DESTROY CRATE UI (Anti-Lag)", Theme.Danger, 5, function()
+createButton(Pages.Crates, "DESTROY CRATE UI (Anti-Lag)", Theme.Danger, 9, function()
     pcall(function()
         local g = PlayerGui:FindFirstChild("EggCrateOpeningUI")
         if g then g:Destroy() end
@@ -1034,7 +1025,6 @@ end)
 -- ===== GIAM LAG =====
 sectionLabel(Pages.LagReduce, "GIAM LAG GAME", 1)
 
--- Trang thai hien tai
 local lagStatusRow = rowCard(Pages.LagReduce, 50, 2)
 local lagStatusLbl = Instance.new("TextLabel", lagStatusRow)
 lagStatusLbl.BackgroundTransparency = 1
@@ -1086,9 +1076,9 @@ createButton(Pages.LagReduce, "KHOI PHUC 100%", Theme.Accent, 6, function()
     lagStatusLbl.TextColor3 = Theme.Accent
 end)
 
--- ===== MISC =====
-sectionLabel(Pages.Misc, "UTILITIES", 1)
-createToggle(Pages.Misc, "Anti-Unequip (Force Hold Tool)", false, 2, function(v)
+-- ===== MISC (LOCK TOOL MOI) =====
+sectionLabel(Pages.Misc, "LOCK TOOL V3 (FIX MOI)", 1)
+createToggle(Pages.Misc, "Khoa Vat Pham (Day thua ve Backpack)", false, 2, function(v)
     Config.LockTool = v
     if v then
         local char = LP.Character
@@ -1100,18 +1090,34 @@ createToggle(Pages.Misc, "Anti-Unequip (Force Hold Tool)", false, 2, function(v)
         Config.LockedTool = nil
     end
 end)
-createTextInput(Pages.Misc, "Toggle Menu Keybind", "RightControl", 3, function(text)
-    local code = Enum.KeyCode[text]
-    if code then Config.ToggleKey = code end
-end)
+
+local lockDesc = rowCard(Pages.Misc, 50, 3)
+local lockDescLbl = Instance.new("TextLabel", lockDesc)
+lockDescLbl.BackgroundTransparency = 1
+lockDescLbl.Size = UDim2.new(1, 0, 1, 0)
+lockDescLbl.Font = Enum.Font.Gotham
+lockDescLbl.TextSize = 11
+lockDescLbl.TextColor3 = Theme.SubText
+lockDescLbl.TextWrapped = true
+lockDescLbl.TextXAlignment = Enum.TextXAlignment.Left
+lockDescLbl.TextYAlignment = Enum.TextYAlignment.Top
+lockDescLbl.Text = [[V3: Neu cam sai mon, tu dong day ve Backpack + equip lai mon da khoa. Khong bi loi di lac.]]
+
 createButton(Pages.Misc, "RE-LOCK CURRENT TOOL", Theme.Accent2, 4, function()
     local char = LP.Character
     if char then
         Config.LockedTool = char:FindFirstChildOfClass("Tool")
     end
 end)
-sectionLabel(Pages.Misc, "INFO", 5)
-local info = rowCard(Pages.Misc, 60, 6)
+
+sectionLabel(Pages.Misc, "KEYBIND", 5)
+createTextInput(Pages.Misc, "Toggle Menu Keybind", "RightControl", 6, function(text)
+    local code = Enum.KeyCode[text]
+    if code then Config.ToggleKey = code end
+end)
+
+sectionLabel(Pages.Misc, "INFO", 7)
+local info = rowCard(Pages.Misc, 70, 8)
 local infoLbl = Instance.new("TextLabel", info)
 infoLbl.BackgroundTransparency = 1
 infoLbl.Size = UDim2.new(1,0,1,0)
@@ -1122,6 +1128,7 @@ infoLbl.TextWrapped = true
 infoLbl.TextXAlignment = Enum.TextXAlignment.Left
 infoLbl.TextYAlignment = Enum.TextYAlignment.Top
 infoLbl.Text = "User: "..LP.Name.."   |   UserId: "..LP.UserId
+    .."\nV3: Lock Tool fix, Auto Pickup toi uu, Open V2 x2 lenh"
     .."\nDung firesignal + getconnections de bypass UI an cua game."
 
 -- =================== TOGGLE OPEN/CLOSE ===================
@@ -1148,14 +1155,13 @@ local function closeScript()
     Config.AntiEgg = false
     Config.LockTool = false
     
-    -- Khoi phuc giam lag truoc khi dong
     RestoreAllSettings()
     
     pcall(function()
         ScreenGui:Destroy()
     end)
     
-    print("[SunnyHubPro] Script closed by user.")
+    print("[SunnyHubPro V3] Script closed by user.")
 end
 
 OpenBtn.MouseButton1Click:Connect(function() 
@@ -1182,19 +1188,15 @@ UserInput.InputBegan:Connect(function(input, gp)
     end
 end)
 
--- =================== CORE LOGIC ===================
+-- =================== CORE LOGIC (TOI UU) ===================
 
--- 1) AUTO BUY (firesignal bypass)
+-- 1) AUTO BUY (firesignal bypass) - Toi uu voi cache
 task.spawn(function()
     while task.wait(0.1) do
         if not ScriptRunning then break end
         if Config.AutoBuy then
             pcall(function()
-                local shop = PlayerGui:FindFirstChild("TotemShopUI")
-                if not shop then return end
-                local sf = shop:FindFirstChild("Frame") and shop.Frame:FindFirstChild("ScrollingFrame")
-                if not sf then return end
-                local item = sf:FindFirstChild(Config.SelectedItem)
+                local item = GetShopItem(Config.SelectedItem)
                 if item and item:FindFirstChild("BuyButton") then
                     local b = item.BuyButton
                     firesignal(b.MouseButton1Click)
@@ -1207,26 +1209,42 @@ task.spawn(function()
     end
 end)
 
--- 2) AUTO OPEN CRATE (firesignal bypass)
+-- 2) AUTO OPEN CRATE V3 (TOI UU + V2 MODE)
+local _crateCache = nil
 local function GetOpenCrateBtn()
+    if _crateCache and _crateCache.Parent then
+        return _crateCache
+    end
     local mainUi = PlayerGui:FindFirstChild("MainUi")
     if mainUi then
-        return mainUi:FindFirstChild("OpenCrateButton", true)
+        _crateCache = mainUi:FindFirstChild("OpenCrateButton", true)
+        return _crateCache
     end
     return nil
 end
 
+local function FireCrateButton(btn)
+    if not btn then return end
+    firesignal(btn.MouseButton1Click)
+    firesignal(btn.MouseButton1Down)
+    firesignal(btn.Activated)
+    for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
+end
+
 task.spawn(function()
-    while task.wait(0.05) do
+    while task.wait(0.02) do -- Nhanh hon, nhung chi fire khi can
         if not ScriptRunning then break end
         if Config.AutoOpen then
             pcall(function()
                 local b = GetOpenCrateBtn()
                 if b then
-                    firesignal(b.MouseButton1Click)
-                    firesignal(b.MouseButton1Down)
-                    firesignal(b.Activated)
-                    for _, c in pairs(getconnections(b.MouseButton1Click)) do c:Fire() end
+                    -- Fire lan 1
+                    FireCrateButton(b)
+                    
+                    -- V2 Mode: Fire lan 2 ngay lap tuc (x2 lenh)
+                    if Config.OpenV2Mode then
+                        FireCrateButton(b)
+                    end
                 end
             end)
             task.wait(Config.OpenSpeed)
@@ -1234,7 +1252,38 @@ task.spawn(function()
     end
 end)
 
--- 3) AUTO PICKUP (ProximityPrompt + ban kinh)
+-- 3) AUTO PICKUP V3 (TOI UU - DUNG CACHE, KHONG SPAM GetDescendants)
+local PromptCache = {}
+local PromptCacheReady = false
+
+-- Khoi tao cache 1 lan
+local function InitPromptCache()
+    if PromptCacheReady then return end
+    PromptCacheReady = true
+    
+    -- Them cac prompt hien co
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            PromptCache[obj] = true
+        end
+    end
+    
+    -- Lang nghe khi them/xoa
+    workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("ProximityPrompt") then
+            PromptCache[obj] = true
+        end
+    end)
+    
+    workspace.DescendantRemoving:Connect(function(obj)
+        if obj:IsA("ProximityPrompt") then
+            PromptCache[obj] = nil
+        end
+    end)
+end
+
+InitPromptCache()
+
 local function GetDistance(prompt)
     local char = LP.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return 9999 end
@@ -1246,51 +1295,72 @@ local function GetDistance(prompt)
 end
 
 task.spawn(function()
-    while task.wait(0.05) do
+    while task.wait(Config.ScanSpeed) do
         if not ScriptRunning then break end
         if Config.AutoPickup then
             pcall(function()
-                for _, obj in pairs(workspace:GetDescendants()) do
-                    if obj:IsA("ProximityPrompt") and obj.Enabled then
-                        if GetDistance(obj) <= Config.PickupRange then
-                            fireproximityprompt(obj)
+                -- Duyet qua cache thay vi GetDescendants moi lan
+                for prompt, _ in pairs(PromptCache) do
+                    if prompt and prompt.Parent and prompt.Enabled then
+                        if GetDistance(prompt) <= Config.PickupRange then
+                            fireproximityprompt(prompt)
                         end
+                    else
+                        -- Xoa khoi cache neu khong hop le
+                        PromptCache[prompt] = nil
                     end
                 end
             end)
-            task.wait(Config.ScanSpeed)
         end
     end
 end)
 
--- 4) LOCK TOOL (Anti-Unequip)
+-- 4) LOCK TOOL V3 (LOGIC MOI - BAO VE + DAY THUA)
 local LockToolConnection
-LockToolConnection = RunService.Stepped:Connect(function()
+LockToolConnection = RunService.Heartbeat:Connect(function()
     if not ScriptRunning then
         LockToolConnection:Disconnect()
         return
     end
+    
     if Config.LockTool and Config.LockedTool then
         local char = LP.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum and Config.LockedTool.Parent ~= char then
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        -- Neu vat pham chinh khong co tren tay -> equip lai
+        if Config.LockedTool.Parent ~= char then
+            if hum then
                 pcall(function() hum:EquipTool(Config.LockedTool) end)
+            end
+        end
+        
+        -- QUAN TRONG: Quet va loai bo bat ky mon nao "di lac" vao tay ngoai mon da khoa
+        for _, obj in pairs(char:GetChildren()) do
+            if obj:IsA("Tool") and obj ~= Config.LockedTool then
+                obj.Parent = LP.Backpack -- Day mon thua ve lai ruong
             end
         end
     end
 end)
 
--- 5) ANTI-EGG GUI
+-- 5) ANTI-EGG GUI (TOI UU - Chi chay khi can)
+local _eggGuiCache = nil
 local AntiEggConnection
 AntiEggConnection = RunService.Heartbeat:Connect(function()
     if not ScriptRunning then
         AntiEggConnection:Disconnect()
         return
     end
+    
     if Config.AntiEgg then
         pcall(function()
-            local eggGui = PlayerGui:FindFirstChild("EggCrateOpeningUI")
+            -- Cache EggGui
+            if not _eggGuiCache or not _eggGuiCache.Parent then
+                _eggGuiCache = PlayerGui:FindFirstChild("EggCrateOpeningUI")
+            end
+            
+            local eggGui = _eggGuiCache
             if eggGui then
                 local skip = eggGui:FindFirstChild("SkipButton", true)
                 if skip then
@@ -1309,7 +1379,8 @@ AntiEggConnection = RunService.Heartbeat:Connect(function()
 end)
 
 -- =================== READY ===================
-print("[SunnyHubPro] Loaded successfully. Player:", LP.Name)
-print("[SunnyHubPro] Nhan '"..Config.ToggleKey.Name.."' hoac click 'S' de toggle menu.")
-print("[SunnyHubPro] Click '-' de thu nho, 'X' de dong script hoan toan.")
-print("[SunnyHubPro] Tab 'Giam Lag' de giam lag voi 5 muc, khoi phuc 100% khi tat.")
+print("[SunnyHubPro V3] Loaded successfully. Player:", LP.Name)
+print("[SunnyHubPro V3] Nhan '"..Config.ToggleKey.Name.."' hoac click 'S' de toggle menu.")
+print("[SunnyHubPro V3] Click '-' de thu nho, 'X' de dong script hoan toan.")
+print("[SunnyHubPro V3] TAB CRATES: Mo thung V2 mode x2 lenh, toi uu lag!")
+print("[SunnyHubPro V3] TAB MISC: Lock Tool V3 day vat pham thua ve Backpack!")
